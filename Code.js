@@ -16,6 +16,27 @@ function doGet() {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+// JSON API for the standalone (GitHub Pages) frontend — same server functions the
+// Apps Script-hosted UI calls via google.script.run, exposed over HTTP instead so a
+// static site can reach them with fetch(). Every action name here must match an
+// actual function below exactly; args are applied positionally.
+function doPost(e) {
+  try {
+    const body = e && e.postData && e.postData.contents ? JSON.parse(e.postData.contents) : {};
+    const action = body.action;
+    const fn = API_ACTIONS[action];
+    if (!fn) return _jsonResponse({ status: 'error', message: 'Unknown action: ' + action });
+    const result = fn.apply(null, Array.isArray(body.args) ? body.args : []);
+    return _jsonResponse(result);
+  } catch (err) {
+    return _jsonResponse({ status: 'error', message: err.message });
+  }
+}
+
+function _jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
 function openActiveSpreadsheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('This script must be bound to a Google Sheet.');
@@ -665,3 +686,13 @@ function removeCIs(adminUser, adminPass, namesText) {
     return { status: 'error', message: e.message };
   }
 }
+
+/* ================= JSON API ACTION MAP (for doPost / static frontend) ================= */
+const API_ACTIONS = {
+  getCIs, getStudents, getIncidents, getAdmins,
+  authenticateCI, loginCI, changeCIPassword, authenticateAdmin,
+  getStudentProfile, getFullReportColumnCByStudentId, getStudentHistory, getCIHistory,
+  submitEntry, bulkAddExtensionEntries,
+  bulkAddStudents, removeStudents,
+  bulkAddCIs, removeCIs
+};
