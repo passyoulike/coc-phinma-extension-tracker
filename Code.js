@@ -197,15 +197,14 @@ function changeCIPassword(name, oldPassword, newPassword) {
 }
 
 // Admin sheet layout is fixed: column A = username, column B = password.
-// Auto-creates the sheet (with a default admin/admin123 account) on first use
-// so there's always a way in. Change the password directly in the sheet afterward.
+// Auto-creates the sheet with just the header row if missing — an admin account
+// must be added manually in the sheet before anyone can log in.
 function _adminSheet() {
   const ss = openActiveSpreadsheet();
   let sheet = ss.getSheetByName(ADMIN_SHEET_NAME);
   if (!sheet) {
     sheet = ss.insertSheet(ADMIN_SHEET_NAME);
     sheet.appendRow(['USERNAME', 'PASSWORD']);
-    sheet.appendRow(['admin', 'admin123']);
   }
   return sheet;
 }
