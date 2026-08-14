@@ -393,11 +393,28 @@
           google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name].apply(null, args);
         });
       }
+      return _fetchServerJSON(name, args, 0);
+    }
+
+    // Google occasionally returns an HTML page (interstitial/error) instead of JSON for
+    // a request against the exec URL — r.json() throws a cryptic "Unexpected token '<'"
+    // in that case. Parse as text first so a bad response can be retried once (these are
+    // near-always transient) instead of surfacing a raw parse error to the user.
+    function _fetchServerJSON(name, args, attempt) {
       return fetch(EXEC_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify({ action: name, args: args })
-      }).then(r => r.json());
+      }).then(r => r.text()).then(text => {
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          if (attempt < 1) {
+            return new Promise(resolve => setTimeout(resolve, 1200)).then(() => _fetchServerJSON(name, args, attempt + 1));
+          }
+          throw new Error('The server is busy right now — please try again in a moment.');
+        }
+      });
     }
 
     /* ---------- tab switching ---------- */
