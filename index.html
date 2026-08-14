@@ -492,11 +492,13 @@
       function render(query) {
         const q = query.trim().toLowerCase();
         boxEl.innerHTML = '';
-        if (!q) { boxEl.classList.remove('open'); return; }
         const names = getNames();
+        if (!names.length) { boxEl.classList.remove('open'); return; }
+        // Empty query (e.g. just focused the field) shows the first 25 names,
+        // same as a native <datalist> would show its full option list on focus.
         const matches = [];
         for (let i = 0; i < names.length && matches.length < 25; i++) {
-          if (names[i].toLowerCase().includes(q)) matches.push(names[i]);
+          if (!q || names[i].toLowerCase().includes(q)) matches.push(names[i]);
         }
         if (!matches.length) {
           const empty = document.createElement('div');
@@ -520,7 +522,7 @@
         boxEl.classList.add('open');
       }
       inputEl.addEventListener('input', () => render(inputEl.value));
-      inputEl.addEventListener('focus', () => { if (inputEl.value.trim()) render(inputEl.value); });
+      inputEl.addEventListener('focus', () => render(inputEl.value));
       inputEl.addEventListener('blur', () => setTimeout(() => boxEl.classList.remove('open'), 150));
     }
 
