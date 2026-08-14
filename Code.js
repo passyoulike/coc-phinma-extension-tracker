@@ -529,19 +529,16 @@ function _studentSheetInfo() {
   return { sheet, headers, idCol: idCols[0], idCols, nameCol, locCol };
 }
 
-// Handles both paste styles: rows copied straight from a spreadsheet (tab-separated)
-// and rows typed as comma-separated text. Names are themselves "Last, First" and
-// contain a comma (e.g. "RAMOS, WINZY VAN"), so a naive split(',') mis-parses them —
-// tabs are preferred when present, and for commas the first part is the ID, the last
-// part is the duplicate ID, and everything in between is rejoined as the name.
+// Format: Student ID, Name (matches the "BULK ADDING STUDENTS" reference sheet).
+// Names are themselves "Last, First" and contain a comma (e.g. "RAMOS, WINZY VAN"), so
+// for the comma-typed fallback everything after the first comma is rejoined as the name.
 function _parseBulkStudentRow(line) {
   if (line.indexOf('\t') !== -1) {
     const parts = line.split('\t').map(p => p.trim());
     return { id: parts[0] || '', name: parts[1] || '' };
   }
   const parts = line.split(',').map(p => p.trim());
-  if (parts.length <= 2) return { id: parts[0] || '', name: parts[1] || '' };
-  return { id: parts[0], name: parts.slice(1, parts.length - 1).join(', ') };
+  return { id: parts[0] || '', name: parts.slice(1).join(', ') };
 }
 
 // Normalizes an ID for comparison only (not for storage) so pasted data with different

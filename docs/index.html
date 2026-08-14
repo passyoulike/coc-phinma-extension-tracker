@@ -119,6 +119,9 @@
       #ciSheetTable tr.row-selected { background: #fdecea; }
       #ciSheetTable tr.row-selected input[type="text"] { background: #fff5f4; }
 
+      #manageRosterTable input[type="checkbox"] { display:block; width:16px; height:16px; margin:0; accent-color:#a12a2a; }
+      #manageRosterTable tr.row-selected { background: #fdecea; }
+
       .stat-row { display:flex; gap:10px; margin-top:12px; }
       .stat { flex:1; background: linear-gradient(160deg, #f0fbf9, #e7f6f2); border: 1px solid rgba(15,118,110,0.12); border-radius: var(--radius-sm); padding:12px 8px; text-align:center; }
       .stat .num { font-size:1.25rem; font-weight:800; color: var(--primary-dark); }
@@ -240,25 +243,25 @@
           <div class="subsection" id="ciManageSub">
             <p class="small"><span id="manageStudentCount">0</span> students currently on the roster.</p>
 
-            <h4>Bulk Add / Update</h4>
-            <p class="small">One student per line: <code>Student ID, Name, Student ID</code> (repeat the ID). You can paste rows copied directly from Excel/Google Sheets (tab-separated) or type them comma-separated — names with a comma (e.g. "RAMOS, WINZY VAN") are handled correctly either way. Duplicate Student IDs (already on the roster, or repeated in this paste) are rejected, not overwritten.</p>
-            <textarea id="manageAddText" rows="6" placeholder="02-2425-000001, Juan Dela Cruz, 02-2425-000001&#10;02-2425-000002, Maria Santos, 02-2425-000002"></textarea>
+            <h4>Bulk Add Students</h4>
+            <p class="small">Open the sample sheet, select the Student ID and Name columns (not the header), copy them, then paste directly into the box below.</p>
+            <a href="https://docs.google.com/spreadsheets/d/1bPf3flHj2sUGOtqL6dOwdsq6FNCSGf9WyNADTDL8vTc/edit?usp=sharing" target="_blank" rel="noopener">
+              <button class="secondary" type="button">📄 Open Sample Sheet</button>
+            </a>
+            <textarea id="manageAddText" rows="6" placeholder="Paste rows copied from the sample sheet here"></textarea>
             <button id="manageAddBtn">Add Students</button>
             <div id="manageAddMsg" class="msg"></div>
 
-            <h4>Remove Students</h4>
-            <p class="small">Paste Student IDs to remove, one per line or comma-separated.</p>
-            <textarea id="manageRemoveText" rows="4" placeholder="02-2425-000001&#10;02-2425-000002"></textarea>
-            <button id="manageRemoveBtn" class="secondary">Remove Students</button>
-            <div id="manageRemoveMsg" class="msg"></div>
-
             <h4>Current Roster</h4>
+            <p class="small">Check a row (highlighted red) to mark it for removal.</p>
             <div class="table-wrap">
-              <table>
-                <thead><tr><th>Student ID</th><th>Name</th><th>Location</th></tr></thead>
+              <table id="manageRosterTable">
+                <thead><tr><th style="width:32px"><input type="checkbox" id="manageSelectAll" title="Select all"></th><th>Student ID</th><th>Name</th><th>Location</th></tr></thead>
                 <tbody id="manageRosterBody"></tbody>
               </table>
             </div>
+            <button class="secondary" id="manageRemoveSelectedBtn" style="border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
+            <div id="manageRemoveMsg" class="msg"></div>
           </div>
 
           <div class="subsection" id="ciExtensionSub">
@@ -611,6 +614,13 @@
     });
 
     /* ================= MANAGE STUDENTS (integrated into CI tab) ================= */
+    function manageSyncSelectAllState() {
+      const boxes = Array.from(document.querySelectorAll('#manageRosterBody .manage-row-check'));
+      const selectAll = document.getElementById('manageSelectAll');
+      selectAll.checked = boxes.length > 0 && boxes.every(b => b.checked);
+      selectAll.indeterminate = boxes.some(b => b.checked) && !selectAll.checked;
+    }
+
     function loadManageRoster() {
       callServer('getStudents').then(res => {
         const body = document.getElementById('manageRosterBody');
@@ -620,14 +630,34 @@
         if (list.length) {
           list.forEach(s => {
             const tr = document.createElement('tr');
-            tr.innerHTML = '<td>'+s.id+'</td><td>'+s.name+'</td><td>'+(s.location||'')+'</td>';
+            tr.setAttribute('data-student-id', s.id);
+            tr.innerHTML =
+              '<td><input type="checkbox" class="manage-row-check"></td>' +
+              '<td>'+s.id+'</td><td>'+s.name+'</td><td>'+(s.location||'')+'</td>';
+            tr.querySelector('.manage-row-check').addEventListener('change', e => {
+              tr.classList.toggle('row-selected', e.target.checked);
+              manageSyncSelectAllState();
+            });
             body.appendChild(tr);
           });
         } else {
-          body.innerHTML = '<tr><td colspan="3">No students yet.</td></tr>';
+          body.innerHTML = '<tr><td colspan="4">No students yet.</td></tr>';
         }
+        const selectAll = document.getElementById('manageSelectAll');
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
       });
     }
+
+    document.getElementById('manageSelectAll').addEventListener('change', e => {
+      const checked = e.target.checked;
+      document.querySelectorAll('#manageRosterBody tr').forEach(tr => {
+        const box = tr.querySelector('.manage-row-check');
+        if (!box) return;
+        box.checked = checked;
+        tr.classList.toggle('row-selected', checked);
+      });
+    });
 
     document.getElementById('manageAddBtn').addEventListener('click', () => {
       const text = document.getElementById('manageAddText').value;
@@ -651,23 +681,25 @@
       });
     });
 
-    document.getElementById('manageRemoveBtn').addEventListener('click', () => {
-      const text = document.getElementById('manageRemoveText').value;
-      if (!text.trim()) { showMsg('manageRemoveMsg', 'Paste at least one Student ID.', true); return; }
-      document.getElementById('manageRemoveBtn').disabled = true;
-      callServer('removeStudents', currentCI, currentCIPass, text).then(res => {
-        document.getElementById('manageRemoveBtn').disabled = false;
+    document.getElementById('manageRemoveSelectedBtn').addEventListener('click', () => {
+      const checked = Array.from(document.querySelectorAll('#manageRosterBody tr')).filter(tr => {
+        const box = tr.querySelector('.manage-row-check');
+        return box && box.checked;
+      });
+      if (!checked.length) { showMsg('manageRemoveMsg', 'Check at least one row to remove.', true); return; }
+      const ids = checked.map(tr => tr.getAttribute('data-student-id'));
+      document.getElementById('manageRemoveSelectedBtn').disabled = true;
+      callServer('removeStudents', currentCI, currentCIPass, ids.join('\n')).then(res => {
+        document.getElementById('manageRemoveSelectedBtn').disabled = false;
         if (res && res.status === 'success') {
-          const notFoundMsg = (res.notFound && res.notFound.length) ? (' Not found: ' + res.notFound.join(', ')) : '';
-          showMsg('manageRemoveMsg', 'Removed ' + res.removed + '.' + notFoundMsg, false);
-          document.getElementById('manageRemoveText').value = '';
+          showMsg('manageRemoveMsg', 'Removed ' + res.removed + '.', false);
           loadManageRoster();
           callServer('getStudents').then(onStudents);
         } else {
           showMsg('manageRemoveMsg', (res && res.message) || 'Failed to remove students.', true);
         }
       }).catch(err => {
-        document.getElementById('manageRemoveBtn').disabled = false;
+        document.getElementById('manageRemoveSelectedBtn').disabled = false;
         showMsg('manageRemoveMsg', 'Server error: ' + err.message, true);
       });
     });
