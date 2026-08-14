@@ -119,9 +119,6 @@
       #ciSheetTable tr.row-selected { background: #fdecea; }
       #ciSheetTable tr.row-selected input[type="text"] { background: #fff5f4; }
 
-      .example-box { background: #0f1e1c; border-radius: var(--radius-sm); padding: 12px 14px; overflow-x:auto; margin-top:6px; }
-      .example-box pre { margin:0; color:#a7f3d0; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; line-height:1.6; white-space:pre; }
-
       .stat-row { display:flex; gap:10px; margin-top:12px; }
       .stat { flex:1; background: linear-gradient(160deg, #f0fbf9, #e7f6f2); border: 1px solid rgba(15,118,110,0.12); border-radius: var(--radius-sm); padding:12px 8px; text-align:center; }
       .stat .num { font-size:1.25rem; font-weight:800; color: var(--primary-dark); }
@@ -199,8 +196,8 @@
 
           <div class="subtabs" role="tablist" aria-label="Clinical Instructor tools">
             <button class="subtab-btn active" id="subtabEntryBtn">📝 Log Entry</button>
-            <button class="subtab-btn" id="subtabManageBtn">🗂️ Manage Students</button>
             <button class="subtab-btn" id="subtabExtensionBtn">📤 Extension</button>
+            <button class="subtab-btn" id="subtabManageBtn">🗂️ Manage Students</button>
             <button class="subtab-btn" id="subtabPasswordBtn">🔒 Password</button>
           </div>
 
@@ -266,19 +263,15 @@
 
           <div class="subsection" id="ciExtensionSub">
             <h4>Bulk Upload Extension Records</h4>
-            <p class="small">One record per line, in this column order: <code>DATE, CI NAME, LOCATION, STUDENT NAME, STUDENT ID, REMARKS, HOURS, INCIDENT</code>. Paste rows copied directly from a spreadsheet (tab-separated) or type them comma-separated. Date, Student Name, and Student ID are required; the other fields may be left blank.</p>
+            <p class="small">One record per line, in this column order: <code>DATE, CI, LOCATION, STUDENT NAME, ID NUMBER, EXTENSION, HOURS, REMARKS</code>. Date, Student Name, and ID Number are required; the other fields may be left blank.</p>
 
-            <p class="small" style="margin-top:16px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:var(--text-muted);">Example Format (copy this)</p>
-            <div class="example-box">
-              <pre id="extExampleText" data-copy="2025-11-11	MERCADO, RAY	CARMEN	RAAGAS, KHOEY DANE NAVARRO	02-2425-009637	2 Item missing - 4 hours	4	test only
-2025-11-12	SANTOS, MARIA	PUERTO	DELA CRUZ, JUAN	02-2425-000123	Tardiness - 24 hrs	24	late in clinical duty">DATE	CI NAME	LOCATION	STUDENT NAME	STUDENT ID	REMARKS	HOURS	INCIDENT
-2025-11-11	MERCADO, RAY	CARMEN	RAAGAS, KHOEY DANE NAVARRO	02-2425-009637	2 Item missing - 4 hours	4	test only
-2025-11-12	SANTOS, MARIA	PUERTO	DELA CRUZ, JUAN	02-2425-000123	Tardiness - 24 hrs	24	late in clinical duty</pre>
-            </div>
-            <p class="small">The first line is just a header label for reference — "Copy Example" copies only the data rows below it, ready to paste into the box below.</p>
-            <button class="secondary" id="extCopyExampleBtn">Copy Example</button>
+            <p class="small" style="margin-top:16px;font-weight:700;text-transform:uppercase;letter-spacing:0.03em;color:var(--text-muted);">Get the format right</p>
+            <p class="small">Open the sample sheet, select the data rows (not the header), copy them, then paste directly into the box below.</p>
+            <a href="https://docs.google.com/spreadsheets/d/1VyDAhoYJS2GTeRX9x5AwhHwPoVgzokuNwgfgFV2Br8Y/edit?usp=sharing" target="_blank" rel="noopener">
+              <button class="secondary" type="button">📄 Open Sample Sheet</button>
+            </a>
 
-            <textarea id="extBulkText" rows="8" placeholder="2025-11-11&#9;MERCADO, RAY&#9;&#9;RAAGAS, KHOEY DANE NAVARRO&#9;02-2425-009637&#9;2 Item missing - 4 hours&#9;4&#9;test only"></textarea>
+            <textarea id="extBulkText" rows="8" placeholder="Paste rows copied from the sample sheet here"></textarea>
             <button id="extBulkBtn">Upload Entries</button>
             <div id="extBulkMsg" class="msg"></div>
           </div>
@@ -680,17 +673,6 @@
     });
 
     /* ================= BULK UPLOAD EXTENSION RECORDS ================= */
-    document.getElementById('extCopyExampleBtn').addEventListener('click', () => {
-      const text = document.getElementById('extExampleText').getAttribute('data-copy');
-      navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('extCopyExampleBtn');
-        const original = btn.textContent;
-        btn.textContent = 'Copied!';
-        setTimeout(() => { btn.textContent = original; }, 1500);
-      }).catch(() => {
-        showMsg('extBulkMsg', 'Could not copy automatically — select the example text manually.', true);
-      });
-    });
 
     document.getElementById('extBulkBtn').addEventListener('click', () => {
       const text = document.getElementById('extBulkText').value;

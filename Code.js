@@ -381,9 +381,9 @@ function submitEntry(data) {
   }
 }
 
-// Parses one pasted row in the order: DATE, CI NAME, LOCATION, STUDENT NAME, STUDENT ID,
-// REMARKS, HOURS, INCIDENT. Tabs (native spreadsheet paste) are preferred; falls back to
-// commas for typed-in text.
+// Parses one pasted row in the order used by the "SAMPLE BULK EXTENSION" reference sheet:
+// DATE, CI, LOCATION, STUDENT NAME, ID NUMBER, EXTENSION, HOURS, REMARKS.
+// Tabs (native spreadsheet paste) are preferred; falls back to commas for typed-in text.
 function _parseBulkExtensionRow(line) {
   const parts = (line.indexOf('\t') !== -1 ? line.split('\t') : line.split(',')).map(p => p.trim());
   return {
@@ -392,9 +392,9 @@ function _parseBulkExtensionRow(line) {
     location: parts[2] || '',
     studentName: parts[3] || '',
     studentId: parts[4] || '',
-    remarks: parts[5] || '',
+    incident: parts[5] || '',
     hours: parts[6] || '',
-    incident: parts[7] || ''
+    remarks: parts[7] || ''
   };
 }
 
