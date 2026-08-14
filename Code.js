@@ -547,9 +547,9 @@ function _normalizeId(id) {
   return String(id || '').trim().replace(/[‐-―]/g, '-').replace(/\s+/g, '');
 }
 
-function bulkAddStudents(ciName, ciPassword, rowsText) {
+function bulkAddStudents(adminUser, adminPass, rowsText) {
   try {
-    _requireCI(ciName, ciPassword);
+    _requireAdmin(adminUser, adminPass);
     const info = _studentSheetInfo();
     const lines = String(rowsText || '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);
     if (!lines.length) return { status: 'error', message: 'Paste at least one student row.' };
@@ -593,9 +593,9 @@ function bulkAddStudents(ciName, ciPassword, rowsText) {
   }
 }
 
-function removeStudents(ciName, ciPassword, idsText) {
+function removeStudents(adminUser, adminPass, idsText) {
   try {
-    _requireCI(ciName, ciPassword);
+    _requireAdmin(adminUser, adminPass);
     const info = _studentSheetInfo();
     const ids = String(idsText || '').split(/[\r\n,]+/).map(s => s.trim()).filter(Boolean);
     if (!ids.length) return { status: 'error', message: 'Paste at least one Student ID.' };

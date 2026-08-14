@@ -200,7 +200,6 @@
           <div class="subtabs" role="tablist" aria-label="Clinical Instructor tools">
             <button class="subtab-btn active" id="subtabEntryBtn">📝 Single</button>
             <button class="subtab-btn" id="subtabExtensionBtn">📤 Bulk Extension</button>
-            <button class="subtab-btn" id="subtabManageBtn">🗂️ Manage Students</button>
             <button class="subtab-btn" id="subtabPasswordBtn">🔒 Password</button>
           </div>
 
@@ -238,30 +237,6 @@
                 <tbody id="ciHistoryBody"></tbody>
               </table>
             </div>
-          </div>
-
-          <div class="subsection" id="ciManageSub">
-            <p class="small"><span id="manageStudentCount">0</span> students currently on the roster.</p>
-
-            <h4>Bulk Add Students</h4>
-            <p class="small">Open the sample sheet, select the Student ID and Name columns (not the header), copy them, then paste directly into the box below.</p>
-            <a href="https://docs.google.com/spreadsheets/d/1bPf3flHj2sUGOtqL6dOwdsq6FNCSGf9WyNADTDL8vTc/edit?usp=sharing" target="_blank" rel="noopener">
-              <button class="secondary" type="button">📄 Open Sample Sheet</button>
-            </a>
-            <textarea id="manageAddText" rows="6" placeholder="Paste rows copied from the sample sheet here"></textarea>
-            <button id="manageAddBtn">Add Students</button>
-            <div id="manageAddMsg" class="msg"></div>
-
-            <h4>Current Roster</h4>
-            <p class="small">Check a row (highlighted red) to mark it for removal.</p>
-            <div class="table-wrap">
-              <table id="manageRosterTable">
-                <thead><tr><th style="width:32px"><input type="checkbox" id="manageSelectAll" title="Select all"></th><th>Student ID</th><th>Name</th><th>Location</th></tr></thead>
-                <tbody id="manageRosterBody"></tbody>
-              </table>
-            </div>
-            <button class="secondary" id="manageRemoveSelectedBtn" style="border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
-            <div id="manageRemoveMsg" class="msg"></div>
           </div>
 
           <div class="subsection" id="ciExtensionSub">
@@ -308,25 +283,57 @@
 
         <div id="adminWorkBox" class="hidden">
           <div style="display:flex;justify-content:space-between;align-items:center">
-            <h3 style="margin:0">Manage Clinical Instructors</h3>
+            <h3 style="margin:0">Admin</h3>
             <button class="secondary" style="width:auto;padding:8px 12px;margin:0" id="adminLogoutBtn">Logout</button>
           </div>
-          <p class="small"><span id="adminCICount">0</span> clinical instructors currently on the roster.</p>
 
-          <h4>Clinical Instructor Roster</h4>
-          <p class="small">Type directly into the grid like a spreadsheet — Name and Password. Blank rows at the bottom are for new CIs. Check a row (highlighted red) to mark it for removal.</p>
-          <div class="table-wrap" style="max-height:none">
-            <table id="ciSheetTable">
-              <thead><tr><th style="width:32px"><input type="checkbox" id="ciSelectAll" title="Select all"></th><th>Name</th><th>Password</th></tr></thead>
-              <tbody id="ciSheetBody"></tbody>
-            </table>
+          <div class="subtabs" role="tablist" aria-label="Admin tools">
+            <button class="subtab-btn active" id="subtabAdminCIBtn">👩‍⚕️ Clinical Instructors</button>
+            <button class="subtab-btn" id="subtabAdminStudentsBtn">🎓 Students</button>
           </div>
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <button class="secondary" id="ciAddRowBtn" style="margin:0">+ Add Row</button>
-            <button id="ciSaveBtn" style="margin:0">Save Changes</button>
-            <button class="secondary" id="ciRemoveSelectedBtn" style="margin:0;border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
+
+          <div class="subsection active" id="adminCISub">
+            <p class="small"><span id="adminCICount">0</span> clinical instructors currently on the roster.</p>
+
+            <h4>Clinical Instructor Roster</h4>
+            <p class="small">Type directly into the grid like a spreadsheet — Name and Password. Blank rows at the bottom are for new CIs. Check a row (highlighted red) to mark it for removal.</p>
+            <div class="table-wrap" style="max-height:none">
+              <table id="ciSheetTable">
+                <thead><tr><th style="width:32px"><input type="checkbox" id="ciSelectAll" title="Select all"></th><th>Name</th><th>Password</th></tr></thead>
+                <tbody id="ciSheetBody"></tbody>
+              </table>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="secondary" id="ciAddRowBtn" style="margin:0">+ Add Row</button>
+              <button id="ciSaveBtn" style="margin:0">Save Changes</button>
+              <button class="secondary" id="ciRemoveSelectedBtn" style="margin:0;border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
+            </div>
+            <div id="ciSheetMsg" class="msg"></div>
           </div>
-          <div id="ciSheetMsg" class="msg"></div>
+
+          <div class="subsection" id="adminStudentsSub">
+            <p class="small"><span id="manageStudentCount">0</span> students currently on the roster.</p>
+
+            <h4>Bulk Add Students</h4>
+            <p class="small">Open the sample sheet, select the Student ID and Name columns (not the header), copy them, then paste directly into the box below.</p>
+            <a href="https://docs.google.com/spreadsheets/d/1bPf3flHj2sUGOtqL6dOwdsq6FNCSGf9WyNADTDL8vTc/edit?usp=sharing" target="_blank" rel="noopener">
+              <button class="secondary" type="button">📄 Open Sample Sheet</button>
+            </a>
+            <textarea id="manageAddText" rows="6" placeholder="Paste rows copied from the sample sheet here"></textarea>
+            <button id="manageAddBtn">Add Students</button>
+            <div id="manageAddMsg" class="msg"></div>
+
+            <h4>Current Roster</h4>
+            <p class="small">Check a row (highlighted red) to mark it for removal.</p>
+            <div class="table-wrap">
+              <table id="manageRosterTable">
+                <thead><tr><th style="width:32px"><input type="checkbox" id="manageSelectAll" title="Select all"></th><th>Student ID</th><th>Name</th><th>Location</th></tr></thead>
+                <tbody id="manageRosterBody"></tbody>
+              </table>
+            </div>
+            <button class="secondary" id="manageRemoveSelectedBtn" style="border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
+            <div id="manageRemoveMsg" class="msg"></div>
+          </div>
         </div>
       </div>
 
@@ -379,7 +386,6 @@
     /* ---------- CI sub-tab switching ---------- */
     const ciSubtabs = {
       entry: { btn: 'subtabEntryBtn', section: 'ciEntrySub' },
-      manage: { btn: 'subtabManageBtn', section: 'ciManageSub' },
       extension: { btn: 'subtabExtensionBtn', section: 'ciExtensionSub' },
       password: { btn: 'subtabPasswordBtn', section: 'ciPasswordSub' }
     };
@@ -390,9 +396,22 @@
       });
     }
     document.getElementById('subtabEntryBtn').addEventListener('click', () => setActiveCISubtab('entry'));
-    document.getElementById('subtabManageBtn').addEventListener('click', () => setActiveCISubtab('manage'));
     document.getElementById('subtabExtensionBtn').addEventListener('click', () => setActiveCISubtab('extension'));
     document.getElementById('subtabPasswordBtn').addEventListener('click', () => setActiveCISubtab('password'));
+
+    /* ---------- Admin sub-tab switching ---------- */
+    const adminSubtabs = {
+      ci: { btn: 'subtabAdminCIBtn', section: 'adminCISub' },
+      students: { btn: 'subtabAdminStudentsBtn', section: 'adminStudentsSub' }
+    };
+    function setActiveAdminSubtab(name) {
+      Object.keys(adminSubtabs).forEach(k => {
+        document.getElementById(adminSubtabs[k].btn).classList.toggle('active', k === name);
+        document.getElementById(adminSubtabs[k].section).classList.toggle('active', k === name);
+      });
+    }
+    document.getElementById('subtabAdminCIBtn').addEventListener('click', () => setActiveAdminSubtab('ci'));
+    document.getElementById('subtabAdminStudentsBtn').addEventListener('click', () => setActiveAdminSubtab('students'));
 
     function showMsg(elId, txt, isErr) {
       const el = document.getElementById(elId);
@@ -515,7 +534,6 @@
         document.getElementById('ciWorkBox').classList.remove('hidden');
         document.getElementById('ciWelcome').textContent = 'Welcome, ' + res.name;
         loadCIHistory();
-        loadManageRoster();
       }).catch(err => {
         document.getElementById('ciLoginBtn').disabled = false;
         showMsg('ciLoginMsg', 'Server error: ' + err.message, true);
@@ -663,7 +681,7 @@
       const text = document.getElementById('manageAddText').value;
       if (!text.trim()) { showMsg('manageAddMsg', 'Paste at least one student row.', true); return; }
       document.getElementById('manageAddBtn').disabled = true;
-      callServer('bulkAddStudents', currentCI, currentCIPass, text).then(res => {
+      callServer('bulkAddStudents', currentAdmin, currentAdminPass, text).then(res => {
         document.getElementById('manageAddBtn').disabled = false;
         if (res && res.status === 'success') {
           const dupMsg = res.duplicates ? (', rejected ' + res.duplicates + ' duplicate ID(s): ' + res.duplicateIds.join(', ')) : '';
@@ -689,7 +707,7 @@
       if (!checked.length) { showMsg('manageRemoveMsg', 'Check at least one row to remove.', true); return; }
       const ids = checked.map(tr => tr.getAttribute('data-student-id'));
       document.getElementById('manageRemoveSelectedBtn').disabled = true;
-      callServer('removeStudents', currentCI, currentCIPass, ids.join('\n')).then(res => {
+      callServer('removeStudents', currentAdmin, currentAdminPass, ids.join('\n')).then(res => {
         document.getElementById('manageRemoveSelectedBtn').disabled = false;
         if (res && res.status === 'success') {
           showMsg('manageRemoveMsg', 'Removed ' + res.removed + '.', false);
@@ -740,6 +758,7 @@
         document.getElementById('adminLoginBox').classList.add('hidden');
         document.getElementById('adminWorkBox').classList.remove('hidden');
         loadAdminRoster();
+        loadManageRoster();
       }).catch(err => {
         document.getElementById('adminLoginBtn').disabled = false;
         showMsg('adminLoginMsg', 'Server error: ' + err.message, true);
