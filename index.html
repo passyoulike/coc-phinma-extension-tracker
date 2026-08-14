@@ -107,6 +107,16 @@
       tbody tr:hover { background: rgba(20,184,166,0.05); }
       .table-wrap { overflow-x:auto; border-radius: var(--radius-sm); border: 1px solid var(--border); max-height: 320px; overflow-y: auto; }
 
+      #ciSheetTable td { padding:4px 6px; }
+      #ciSheetTable input[type="text"] {
+        width:100%; margin:0; padding:7px 8px; font-size:13px; border-radius:6px;
+        border:1.5px solid transparent; background:transparent;
+      }
+      #ciSheetTable input[type="text"]:hover { background: var(--surface-muted); }
+      #ciSheetTable input[type="text"]:focus { background:#fff; border-color: var(--primary-light); box-shadow: 0 0 0 2px rgba(20,184,166,0.15); }
+      #ciSheetTable input[type="checkbox"] { display:block; width:16px; height:16px; margin:0; }
+      #ciSheetTable tr.new-row { background: rgba(20,184,166,0.06); }
+
       .example-box { background: #0f1e1c; border-radius: var(--radius-sm); padding: 12px 14px; overflow-x:auto; margin-top:6px; }
       .example-box pre { margin:0; color:#a7f3d0; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; line-height:1.6; white-space:pre; }
 
@@ -305,25 +315,20 @@
           </div>
           <p class="small"><span id="adminCICount">0</span> clinical instructors currently on the roster.</p>
 
-          <h4>Bulk Add / Update</h4>
-          <p class="small">One CI per line: <code>Name, Password</code> (name in "Last, First" form is fine — only the last comma splits off the password). Existing names are updated, new names are added.</p>
-          <textarea id="adminAddText" rows="6" placeholder="ALCANZAR, FELIX, 12345&#10;SANTOS, MARIA, 67890"></textarea>
-          <button id="adminAddBtn">Add / Update CIs</button>
-          <div id="adminAddMsg" class="msg"></div>
-
-          <h4>Remove Clinical Instructors</h4>
-          <p class="small">Paste full CI names to remove, one per line (do not use commas to separate multiple names — names themselves contain a comma).</p>
-          <textarea id="adminRemoveText" rows="4" placeholder="ALCANZAR, FELIX&#10;SANTOS, MARIA"></textarea>
-          <button id="adminRemoveBtn" class="secondary">Remove CIs</button>
-          <div id="adminRemoveMsg" class="msg"></div>
-
-          <h4>Current CI Roster</h4>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Name</th></tr></thead>
-              <tbody id="adminRosterBody"></tbody>
+          <h4>Clinical Instructor Roster</h4>
+          <p class="small">Type directly into the grid like a spreadsheet — Name and Password. Blank rows at the bottom are for new CIs. Check the box next to a row to select it for removal.</p>
+          <div class="table-wrap" style="max-height:none">
+            <table id="ciSheetTable">
+              <thead><tr><th style="width:32px"></th><th>Name</th><th>Password</th></tr></thead>
+              <tbody id="ciSheetBody"></tbody>
             </table>
           </div>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="secondary" id="ciAddRowBtn" style="margin:0">+ Add Row</button>
+            <button id="ciSaveBtn" style="margin:0">Save Changes</button>
+            <button class="secondary" id="ciRemoveSelectedBtn" style="margin:0;border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
+          </div>
+          <div id="ciSheetMsg" class="msg"></div>
         </div>
       </div>
 
@@ -733,60 +738,79 @@
       document.getElementById('adminLoginPass').value = '';
     });
 
+    /* ---------- CI roster grid (spreadsheet-style) ---------- */
+    function ciSheetRow(name, password, isNew) {
+      const tr = document.createElement('tr');
+      if (isNew) tr.classList.add('new-row');
+      if (!isNew) tr.setAttribute('data-original-name', name);
+      tr.innerHTML =
+        '<td><input type="checkbox" class="ci-row-check"></td>' +
+        '<td><input type="text" class="ci-row-name" value="' + (name || '').replace(/"/g, '&quot;') + '" placeholder="Full name"></td>' +
+        '<td><input type="text" class="ci-row-pass" value="' + (password || '').replace(/"/g, '&quot;') + '" placeholder="Password"></td>';
+      return tr;
+    }
+
     function loadAdminRoster() {
-      callServer('getCIs').then(res => {
-        const body = document.getElementById('adminRosterBody');
+      callServer('getCIsWithPasswords', currentAdmin, currentAdminPass).then(res => {
+        const body = document.getElementById('ciSheetBody');
         body.innerHTML = '';
         const list = (res && res.status === 'success') ? res.list : [];
         document.getElementById('adminCICount').textContent = list.length;
-        if (list.length) {
-          list.forEach(ci => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = '<td>'+ci.name+'</td>';
-            body.appendChild(tr);
-          });
-        } else {
-          body.innerHTML = '<tr><td>No clinical instructors yet.</td></tr>';
-        }
+        list.forEach(ci => body.appendChild(ciSheetRow(ci.name, ci.password, false)));
+        body.appendChild(ciSheetRow('', '', true)); // one blank row ready for a new CI
       });
     }
 
-    document.getElementById('adminAddBtn').addEventListener('click', () => {
-      const text = document.getElementById('adminAddText').value;
-      if (!text.trim()) { showMsg('adminAddMsg', 'Paste at least one CI row.', true); return; }
-      document.getElementById('adminAddBtn').disabled = true;
-      callServer('bulkAddCIs', currentAdmin, currentAdminPass, text).then(res => {
-        document.getElementById('adminAddBtn').disabled = false;
+    document.getElementById('ciAddRowBtn').addEventListener('click', () => {
+      document.getElementById('ciSheetBody').appendChild(ciSheetRow('', '', true));
+    });
+
+    document.getElementById('ciSaveBtn').addEventListener('click', () => {
+      const rows = Array.from(document.querySelectorAll('#ciSheetBody tr'));
+      const lines = rows
+        .map(tr => ({
+          name: tr.querySelector('.ci-row-name').value.trim(),
+          password: tr.querySelector('.ci-row-pass').value.trim()
+        }))
+        .filter(r => r.name)
+        .map(r => r.name + ',' + r.password);
+      if (!lines.length) { showMsg('ciSheetMsg', 'Nothing to save — fill in at least a name.', true); return; }
+      document.getElementById('ciSaveBtn').disabled = true;
+      callServer('bulkAddCIs', currentAdmin, currentAdminPass, lines.join('\n')).then(res => {
+        document.getElementById('ciSaveBtn').disabled = false;
         if (res && res.status === 'success') {
-          showMsg('adminAddMsg', 'Added ' + res.added + ', updated ' + res.updated + (res.skipped ? (', skipped ' + res.skipped) : '') + '.', false);
-          document.getElementById('adminAddText').value = '';
+          showMsg('ciSheetMsg', 'Saved — added ' + res.added + ', updated ' + res.updated + '.', false);
           loadAdminRoster();
         } else {
-          showMsg('adminAddMsg', (res && res.message) || 'Failed to add CIs.', true);
+          showMsg('ciSheetMsg', (res && res.message) || 'Failed to save.', true);
         }
       }).catch(err => {
-        document.getElementById('adminAddBtn').disabled = false;
-        showMsg('adminAddMsg', 'Server error: ' + err.message, true);
+        document.getElementById('ciSaveBtn').disabled = false;
+        showMsg('ciSheetMsg', 'Server error: ' + err.message, true);
       });
     });
 
-    document.getElementById('adminRemoveBtn').addEventListener('click', () => {
-      const text = document.getElementById('adminRemoveText').value;
-      if (!text.trim()) { showMsg('adminRemoveMsg', 'Paste at least one CI name.', true); return; }
-      document.getElementById('adminRemoveBtn').disabled = true;
-      callServer('removeCIs', currentAdmin, currentAdminPass, text).then(res => {
-        document.getElementById('adminRemoveBtn').disabled = false;
+    document.getElementById('ciRemoveSelectedBtn').addEventListener('click', () => {
+      const checked = Array.from(document.querySelectorAll('#ciSheetBody tr')).filter(tr => tr.querySelector('.ci-row-check').checked);
+      if (!checked.length) { showMsg('ciSheetMsg', 'Check at least one row to remove.', true); return; }
+      const existingNames = checked
+        .filter(tr => tr.hasAttribute('data-original-name'))
+        .map(tr => tr.getAttribute('data-original-name'));
+      // Unsaved new rows just get discarded client-side — nothing to remove server-side.
+      checked.filter(tr => !tr.hasAttribute('data-original-name')).forEach(tr => tr.remove());
+      if (!existingNames.length) return;
+      document.getElementById('ciRemoveSelectedBtn').disabled = true;
+      callServer('removeCIs', currentAdmin, currentAdminPass, existingNames.join('\n')).then(res => {
+        document.getElementById('ciRemoveSelectedBtn').disabled = false;
         if (res && res.status === 'success') {
-          const notFoundMsg = (res.notFound && res.notFound.length) ? (' Not found: ' + res.notFound.join(', ')) : '';
-          showMsg('adminRemoveMsg', 'Removed ' + res.removed + '.' + notFoundMsg, false);
-          document.getElementById('adminRemoveText').value = '';
+          showMsg('ciSheetMsg', 'Removed ' + res.removed + '.', false);
           loadAdminRoster();
         } else {
-          showMsg('adminRemoveMsg', (res && res.message) || 'Failed to remove CIs.', true);
+          showMsg('ciSheetMsg', (res && res.message) || 'Failed to remove.', true);
         }
       }).catch(err => {
-        document.getElementById('adminRemoveBtn').disabled = false;
-        showMsg('adminRemoveMsg', 'Server error: ' + err.message, true);
+        document.getElementById('ciRemoveSelectedBtn').disabled = false;
+        showMsg('ciSheetMsg', 'Server error: ' + err.message, true);
       });
     });
 

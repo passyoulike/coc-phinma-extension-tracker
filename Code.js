@@ -120,6 +120,21 @@ function getCIs() {
   }
 }
 
+// Admin-only: includes passwords, for the editable CI roster grid on the Admin tab.
+function getCIsWithPasswords(adminUser, adminPass) {
+  try {
+    _requireAdmin(adminUser, adminPass);
+    const { rows } = _ciSheetRows();
+    const list = rows
+      .map(r => ({ name: String(r[0] || '').trim(), password: String(r[1] || '').trim() }))
+      .filter(x => x.name);
+    list.sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+    return { status: 'success', list };
+  } catch (e) {
+    return { status: 'error', list: [], message: e.message };
+  }
+}
+
 function getStudents() {
   try {
     const ss = openActiveSpreadsheet();
@@ -689,7 +704,7 @@ function removeCIs(adminUser, adminPass, namesText) {
 
 /* ================= JSON API ACTION MAP (for doPost / static frontend) ================= */
 const API_ACTIONS = {
-  getCIs, getStudents, getIncidents, getAdmins,
+  getCIs, getCIsWithPasswords, getStudents, getIncidents, getAdmins,
   authenticateCI, loginCI, changeCIPassword, authenticateAdmin,
   getStudentProfile, getFullReportColumnCByStudentId, getStudentHistory, getCIHistory,
   submitEntry, bulkAddExtensionEntries,
