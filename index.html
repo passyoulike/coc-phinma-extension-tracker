@@ -90,6 +90,20 @@
       }
       input[readonly]{ background:#eef1f1; color: var(--text-muted); }
 
+      /* Custom autocomplete — replaces native <datalist>, which chokes once the source
+         list runs into the thousands of options (e.g. the full student roster). */
+      .autocomplete-wrap { position:relative; }
+      .autocomplete-list {
+        display:none; position:absolute; left:0; right:0; top:100%; z-index:20;
+        max-height:220px; overflow-y:auto; background:#fff; border:1.5px solid var(--primary-light);
+        border-top:none; border-radius:0 0 var(--radius-sm) var(--radius-sm);
+        box-shadow: 0 10px 20px -8px rgba(0,0,0,0.18);
+      }
+      .autocomplete-list.open { display:block; }
+      .autocomplete-item { padding:10px 14px; font-size:14px; cursor:pointer; }
+      .autocomplete-item:hover, .autocomplete-item.active { background: var(--surface-muted); }
+      .autocomplete-empty { padding:10px 14px; font-size:13px; color: var(--text-muted); }
+
       button { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%); color: #fff; border:none; font-weight:700; cursor:pointer; min-height:46px; touch-action:manipulation; box-shadow: 0 6px 16px -6px rgba(15,118,110,0.5); }
       button:hover { filter: brightness(1.04); }
       button:active { transform: translateY(1px); }
@@ -195,8 +209,10 @@
         <div id="ciLoginBox">
           <h3 style="margin-top:0">Clinical Instructor Login</h3>
           <label>Name</label>
-          <input list="ciList" id="ciLoginInput" placeholder="Type or select your name" autocomplete="off">
-          <datalist id="ciList"></datalist>
+          <div class="autocomplete-wrap">
+            <input id="ciLoginInput" placeholder="Type your name" autocomplete="off">
+            <div class="autocomplete-list" id="ciLoginSuggest"></div>
+          </div>
           <label>Password</label>
           <input type="password" id="ciLoginPass" placeholder="Password">
           <button id="ciLoginBtn">Login</button>
@@ -226,8 +242,10 @@
             <input type="date" id="entryDate">
 
             <label>Student</label>
-            <input list="studentList" id="entryStudentInput" placeholder="Type or select student" autocomplete="off">
-            <datalist id="studentList"></datalist>
+            <div class="autocomplete-wrap">
+              <input id="entryStudentInput" placeholder="Type student name" autocomplete="off">
+              <div class="autocomplete-list" id="entryStudentSuggest"></div>
+            </div>
             <label>Student ID</label>
             <input id="entryStudentId" readonly placeholder="Auto-fills from student">
 
@@ -285,8 +303,10 @@
         <div id="adminLoginBox">
           <h3 style="margin-top:0">Admin Login</h3>
           <label>Username</label>
-          <input list="adminList" id="adminLoginUser" placeholder="Type or select admin username" autocomplete="off">
-          <datalist id="adminList"></datalist>
+          <div class="autocomplete-wrap">
+            <input id="adminLoginUser" placeholder="Type admin username" autocomplete="off">
+            <div class="autocomplete-list" id="adminLoginSuggest"></div>
+          </div>
           <label>Password</label>
           <input type="password" id="adminLoginPass" placeholder="Password">
           <button id="adminLoginBtn">Login</button>
@@ -463,31 +483,65 @@
       callServer('getAdmins').then(onAdmins);
     }
 
-    function onAdmins(res) {
-      const dl = document.getElementById('adminList');
-      dl.innerHTML = '';
-      if (res && res.status === 'success' && Array.isArray(res.list)) {
-        res.list.forEach(name => dl.appendChild(new Option(name, name)));
+    /* ---------- custom autocomplete (replaces native <datalist>, which chokes once
+       the source list runs into the thousands — e.g. the full student roster) ---------- */
+    let ciNames = [];
+    let adminNames = [];
+
+    function attachAutocomplete(inputEl, boxEl, getNames) {
+      function render(query) {
+        const q = query.trim().toLowerCase();
+        boxEl.innerHTML = '';
+        if (!q) { boxEl.classList.remove('open'); return; }
+        const names = getNames();
+        const matches = [];
+        for (let i = 0; i < names.length && matches.length < 25; i++) {
+          if (names[i].toLowerCase().includes(q)) matches.push(names[i]);
+        }
+        if (!matches.length) {
+          const empty = document.createElement('div');
+          empty.className = 'autocomplete-empty';
+          empty.textContent = 'No matches';
+          boxEl.appendChild(empty);
+        } else {
+          matches.forEach(name => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.textContent = name;
+            item.addEventListener('mousedown', ev => {
+              ev.preventDefault();
+              inputEl.value = name;
+              inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+              boxEl.classList.remove('open');
+            });
+            boxEl.appendChild(item);
+          });
+        }
+        boxEl.classList.add('open');
       }
+      inputEl.addEventListener('input', () => render(inputEl.value));
+      inputEl.addEventListener('focus', () => { if (inputEl.value.trim()) render(inputEl.value); });
+      inputEl.addEventListener('blur', () => setTimeout(() => boxEl.classList.remove('open'), 150));
+    }
+
+    function onAdmins(res) {
+      adminNames = (res && res.status === 'success' && Array.isArray(res.list)) ? res.list : [];
     }
 
     function onCIs(res) {
-      const dl = document.getElementById('ciList');
-      dl.innerHTML = '';
-      if (res && res.status === 'success' && Array.isArray(res.list)) {
-        res.list.forEach(ci => dl.appendChild(new Option(ci.name, ci.name)));
-      }
+      ciNames = (res && res.status === 'success' && Array.isArray(res.list)) ? res.list.map(ci => ci.name) : [];
     }
 
     function onStudents(res) {
       studentsMap = {};
-      const dl = document.getElementById('studentList');
-      dl.innerHTML = '';
       if (res && res.status === 'success' && Array.isArray(res.list)) {
-        res.list.forEach(s => dl.appendChild(new Option(s.name, s.name)));
         res.list.forEach(s => { studentsMap[s.name] = s.id || ''; });
       }
     }
+
+    attachAutocomplete(document.getElementById('ciLoginInput'), document.getElementById('ciLoginSuggest'), () => ciNames);
+    attachAutocomplete(document.getElementById('entryStudentInput'), document.getElementById('entryStudentSuggest'), () => Object.keys(studentsMap));
+    attachAutocomplete(document.getElementById('adminLoginUser'), document.getElementById('adminLoginSuggest'), () => adminNames);
 
     function onIncidents(res) {
       incidentsMap = {};
