@@ -114,8 +114,10 @@
       }
       #ciSheetTable input[type="text"]:hover { background: var(--surface-muted); }
       #ciSheetTable input[type="text"]:focus { background:#fff; border-color: var(--primary-light); box-shadow: 0 0 0 2px rgba(20,184,166,0.15); }
-      #ciSheetTable input[type="checkbox"] { display:block; width:16px; height:16px; margin:0; }
+      #ciSheetTable input[type="checkbox"] { display:block; width:16px; height:16px; margin:0; accent-color:#a12a2a; }
       #ciSheetTable tr.new-row { background: rgba(20,184,166,0.06); }
+      #ciSheetTable tr.row-selected { background: #fdecea; }
+      #ciSheetTable tr.row-selected input[type="text"] { background: #fff5f4; }
 
       .example-box { background: #0f1e1c; border-radius: var(--radius-sm); padding: 12px 14px; overflow-x:auto; margin-top:6px; }
       .example-box pre { margin:0; color:#a7f3d0; font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace; font-size: 12px; line-height:1.6; white-space:pre; }
@@ -316,10 +318,10 @@
           <p class="small"><span id="adminCICount">0</span> clinical instructors currently on the roster.</p>
 
           <h4>Clinical Instructor Roster</h4>
-          <p class="small">Type directly into the grid like a spreadsheet — Name and Password. Blank rows at the bottom are for new CIs. Check the box next to a row to select it for removal.</p>
+          <p class="small">Type directly into the grid like a spreadsheet — Name and Password. Blank rows at the bottom are for new CIs. Check a row (highlighted red) to mark it for removal.</p>
           <div class="table-wrap" style="max-height:none">
             <table id="ciSheetTable">
-              <thead><tr><th style="width:32px"></th><th>Name</th><th>Password</th></tr></thead>
+              <thead><tr><th style="width:32px"><input type="checkbox" id="ciSelectAll" title="Select all"></th><th>Name</th><th>Password</th></tr></thead>
               <tbody id="ciSheetBody"></tbody>
             </table>
           </div>
@@ -747,7 +749,18 @@
         '<td><input type="checkbox" class="ci-row-check"></td>' +
         '<td><input type="text" class="ci-row-name" value="' + (name || '').replace(/"/g, '&quot;') + '" placeholder="Full name"></td>' +
         '<td><input type="text" class="ci-row-pass" value="' + (password || '').replace(/"/g, '&quot;') + '" placeholder="Password"></td>';
+      tr.querySelector('.ci-row-check').addEventListener('change', e => {
+        tr.classList.toggle('row-selected', e.target.checked);
+        syncSelectAllState();
+      });
       return tr;
+    }
+
+    function syncSelectAllState() {
+      const boxes = Array.from(document.querySelectorAll('#ciSheetBody .ci-row-check'));
+      const selectAll = document.getElementById('ciSelectAll');
+      selectAll.checked = boxes.length > 0 && boxes.every(b => b.checked);
+      selectAll.indeterminate = boxes.some(b => b.checked) && !selectAll.checked;
     }
 
     function loadAdminRoster() {
@@ -758,11 +771,22 @@
         document.getElementById('adminCICount').textContent = list.length;
         list.forEach(ci => body.appendChild(ciSheetRow(ci.name, ci.password, false)));
         body.appendChild(ciSheetRow('', '', true)); // one blank row ready for a new CI
+        const selectAll = document.getElementById('ciSelectAll');
+        selectAll.checked = false;
+        selectAll.indeterminate = false;
       });
     }
 
     document.getElementById('ciAddRowBtn').addEventListener('click', () => {
       document.getElementById('ciSheetBody').appendChild(ciSheetRow('', '', true));
+    });
+
+    document.getElementById('ciSelectAll').addEventListener('change', e => {
+      const checked = e.target.checked;
+      document.querySelectorAll('#ciSheetBody tr').forEach(tr => {
+        tr.querySelector('.ci-row-check').checked = checked;
+        tr.classList.toggle('row-selected', checked);
+      });
     });
 
     document.getElementById('ciSaveBtn').addEventListener('click', () => {
