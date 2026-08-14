@@ -805,6 +805,7 @@
         if (res && res.status === 'success') {
           showMsg('ciSheetMsg', 'Saved — added ' + res.added + ', updated ' + res.updated + '.', false);
           loadAdminRoster();
+          callServer('getCIs').then(onCIs); // keep the CI login dropdown in sync too
         } else {
           showMsg('ciSheetMsg', (res && res.message) || 'Failed to save.', true);
         }
@@ -829,6 +830,7 @@
         if (res && res.status === 'success') {
           showMsg('ciSheetMsg', 'Removed ' + res.removed + '.', false);
           loadAdminRoster();
+          callServer('getCIs').then(onCIs); // keep the CI login dropdown in sync too
         } else {
           showMsg('ciSheetMsg', (res && res.message) || 'Failed to remove.', true);
         }
