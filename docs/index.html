@@ -134,6 +134,18 @@
       .pill.Cancelled { background:#fdecea; color:#a12a2a; }
 
       footer { margin-top:22px; text-align:center; color: var(--text-muted); font-size:0.75rem; padding:12px 0; }
+
+      .online-counter {
+        display:flex; align-items:center; justify-content:center; gap:6px;
+        margin: 0 0 20px; font-size:0.75rem; font-weight:700; color: var(--text-muted);
+        text-transform:uppercase; letter-spacing:0.03em;
+      }
+      .online-dot { width:8px; height:8px; border-radius:50%; background:#22c55e; box-shadow:0 0 0 rgba(34,197,94,0.5); animation: onlinePulse 2s infinite; }
+      @keyframes onlinePulse {
+        0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); }
+        70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); }
+        100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+      }
     </style>
   </head>
   <body>
@@ -338,6 +350,7 @@
       </div>
 
       <footer>COC Phinma College of Nursing — designed by Ray Mercado RN MN</footer>
+      <div id="onlineCounter" class="online-counter"><span class="online-dot"></span><span id="onlineCountText">— online now</span></div>
     </div>
 
   <script>
@@ -873,8 +886,36 @@
       });
     });
 
+    /* ================= "ONLINE NOW" PRESENCE COUNTER ================= */
+    function getSessionId() {
+      let id = sessionStorage.getItem('presenceSessionId');
+      if (!id) {
+        id = 'sess_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+        sessionStorage.setItem('presenceSessionId', id);
+      }
+      return id;
+    }
+
+    function refreshOnlineCount() {
+      callServer('getOnlineCount').then(res => {
+        if (res && res.status === 'success') {
+          document.getElementById('onlineCountText').textContent = res.count + ' online now';
+        }
+      }).catch(() => {});
+    }
+
+    function startPresence() {
+      const sessionId = getSessionId();
+      const ping = () => {
+        callServer('heartbeat', sessionId).then(refreshOnlineCount).catch(() => {});
+      };
+      ping();
+      setInterval(ping, 30000);
+    }
+
     document.addEventListener('DOMContentLoaded', () => {
       loadInitial();
+      startPresence();
     });
   </script>
   </body>

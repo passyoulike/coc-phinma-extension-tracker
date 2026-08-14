@@ -8,6 +8,9 @@ const EXTENSION_SHEET_NAME = 'Extension';
 const FULL_REPORT_SHEET_NAME = 'Full Report';
 const CI_LOGIN_LOG_SHEET_NAME = 'CI Login Log';
 const ADMIN_SHEET_NAME = 'Admin';
+const PRESENCE_SHEET_NAME = 'Presence';
+const PRESENCE_ONLINE_WINDOW_MS = 90 * 1000; // a session counts as "online" if seen in the last 90s
+const PRESENCE_STALE_ROW_MS = 60 * 60 * 1000; // rows older than 1h are pruned on each call
 // -----------------------------------
 
 function doGet() {
@@ -173,6 +176,78 @@ function getIncidents() {
     return { status: 'success', list };
   } catch (e) {
     return { status: 'error', list: [], message: e.message };
+  }
+}
+
+/* ================= PRESENCE ("online now" counter) ================= */
+
+function _presenceSheet() {
+  const ss = openActiveSpreadsheet();
+  let sheet = ss.getSheetByName(PRESENCE_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(PRESENCE_SHEET_NAME);
+    sheet.appendRow(['SESSION ID', 'LAST SEEN']);
+  }
+  return sheet;
+}
+
+// Called every ~30s by each open browser tab with a random per-tab session ID, so the
+// server can tell how many distinct tabs have pinged recently. Locked to avoid two
+// simultaneous heartbeats both appending a fresh row for the same session.
+function heartbeat(sessionId) {
+  try {
+    sessionId = (sessionId || '').toString().trim();
+    if (!sessionId) return { status: 'error', message: 'Missing session id.' };
+    const lock = LockService.getScriptLock();
+    lock.waitLock(5000);
+    try {
+      const sheet = _presenceSheet();
+      const now = new Date();
+      const lastRow = sheet.getLastRow();
+      const ids = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat() : [];
+      const idx = ids.findIndex(v => String(v || '').trim() === sessionId);
+      if (idx === -1) {
+        sheet.appendRow([sessionId, now]);
+      } else {
+        sheet.getRange(idx + 2, 2).setValue(now);
+      }
+      _prunePresence(sheet, now);
+    } finally {
+      lock.releaseLock();
+    }
+    return { status: 'success' };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+function _prunePresence(sheet, now) {
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+  const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+  const rowsToDelete = [];
+  values.forEach((r, i) => {
+    const seen = r[1] instanceof Date ? r[1].getTime() : 0;
+    if (now.getTime() - seen > PRESENCE_STALE_ROW_MS) rowsToDelete.push(i + 2);
+  });
+  rowsToDelete.sort((a, b) => b - a).forEach(rowNum => sheet.deleteRow(rowNum));
+}
+
+function getOnlineCount() {
+  try {
+    const sheet = _presenceSheet();
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return { status: 'success', count: 0 };
+    const now = Date.now();
+    const values = sheet.getRange(2, 1, lastRow - 1, 2).getValues();
+    let count = 0;
+    values.forEach(r => {
+      const seen = r[1] instanceof Date ? r[1].getTime() : 0;
+      if (now - seen <= PRESENCE_ONLINE_WINDOW_MS) count++;
+    });
+    return { status: 'success', count };
+  } catch (e) {
+    return { status: 'error', count: 0, message: e.message };
   }
 }
 
@@ -706,5 +781,6 @@ const API_ACTIONS = {
   getStudentProfile, getFullReportColumnCByStudentId, getStudentHistory, getCIHistory,
   submitEntry, bulkAddExtensionEntries,
   bulkAddStudents, removeStudents,
-  bulkAddCIs, removeCIs
+  bulkAddCIs, removeCIs,
+  heartbeat, getOnlineCount
 };
