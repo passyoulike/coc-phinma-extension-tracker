@@ -190,7 +190,6 @@
         <div id="stuProfileBox" class="hidden">
           <div class="stat-row">
             <div class="stat"><div class="num" id="stuName">-</div><div class="lbl">Name</div></div>
-            <div class="stat"><div class="num" id="stuLocation">-</div><div class="lbl">Location</div></div>
             <div class="stat"><div class="num" id="stuPendingHours">-</div><div class="lbl">Pending Hours</div></div>
           </div>
 
@@ -590,7 +589,6 @@
         currentStudentId = id;
         document.getElementById('stuProfileBox').classList.remove('hidden');
         document.getElementById('stuName').textContent = res.name || '-';
-        document.getElementById('stuLocation').textContent = res.location || '-';
         if (res.notOnRoster) {
           showMsg('stuMsg', 'This Student ID is not on the Student List roster — showing records from the Extension log only.', false);
         }
