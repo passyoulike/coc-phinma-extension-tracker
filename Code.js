@@ -345,7 +345,7 @@ function getSummary() {
       ciName: byCI[k].ciName,
       students: byCI[k].students.size,
       totalHours: Math.round(byCI[k].totalHours * 100) / 100
-    })).sort((a, b) => a.ciName.localeCompare(b.ciName, 'en', { sensitivity: 'base' }));
+    })).sort((a, b) => b.totalHours - a.totalHours || a.ciName.localeCompare(b.ciName, 'en', { sensitivity: 'base' }));
 
     const allStudents = new Set();
     Object.keys(byCI).forEach(k => byCI[k].students.forEach(s => allStudents.add(s)));
