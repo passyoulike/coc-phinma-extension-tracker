@@ -81,7 +81,7 @@
       label { display:block; margin-top:14px; font-weight: 700; font-size: 12.5px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); }
       input, select, textarea, button {
         display:block; width:100%; max-width:100%; min-width:0; padding:12px 14px; margin-top:6px; border-radius: var(--radius-sm);
-        border: 1.5px solid var(--border); box-sizing:border-box; font-size:15px; font-family:inherit; -webkit-appearance:none; appearance:none;
+        border: 1.5px solid var(--border); box-sizing:border-box; font-size:16px; font-family:inherit; -webkit-appearance:none; appearance:none;
         background: var(--surface-muted); color: var(--text); transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
       }
       input:focus, select:focus, textarea:focus {
@@ -95,12 +95,13 @@
       .autocomplete-wrap { position:relative; }
       .autocomplete-list {
         display:none; position:absolute; left:0; right:0; top:100%; z-index:20;
-        max-height:220px; overflow-y:auto; background:#fff; border:1.5px solid var(--primary-light);
+        max-height:min(260px, 40vh); overflow-y:auto; background:#fff; border:1.5px solid var(--primary-light);
+        -webkit-overflow-scrolling:touch; overscroll-behavior:contain; touch-action:pan-y;
         border-top:none; border-radius:0 0 var(--radius-sm) var(--radius-sm);
         box-shadow: 0 10px 20px -8px rgba(0,0,0,0.18);
       }
       .autocomplete-list.open { display:block; }
-      .autocomplete-item { padding:10px 14px; font-size:14px; cursor:pointer; }
+      .autocomplete-item { padding:13px 14px; font-size:15px; cursor:pointer; min-height:44px; box-sizing:border-box; border-bottom:1px solid var(--border); -webkit-tap-highlight-color:rgba(20,184,166,0.2); }
       .autocomplete-item:hover, .autocomplete-item.active { background: var(--surface-muted); }
       .autocomplete-empty { padding:10px 14px; font-size:13px; color: var(--text-muted); }
 
@@ -504,12 +505,40 @@
     let ciNames = [];
     let adminNames = [];
 
+    // Works with mouse, touch (iPhone/Android) and keyboard (laptop). Selection uses
+    // `click` rather than `mousedown`: on iOS/Android the input blurs before the
+    // emulated mousedown arrives, so the old approach closed the list before a tap
+    // registered. A pointer-down inside the list now holds it open until the tap lands.
     function attachAutocomplete(inputEl, boxEl, getNames) {
+      let activeIdx = -1;
+      let holding = false;
+      let items = [];
+
+      function close() { boxEl.classList.remove('open'); activeIdx = -1; }
+
+      function choose(name) {
+        inputEl.value = name;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        close();
+        inputEl.blur(); // dismisses the on-screen keyboard after picking
+      }
+
+      function setActive(idx) {
+        items.forEach(el => el.classList.remove('active'));
+        activeIdx = idx;
+        if (items[idx]) {
+          items[idx].classList.add('active');
+          items[idx].scrollIntoView({ block: 'nearest' });
+        }
+      }
+
       function render(query) {
         const q = query.trim().toLowerCase();
         boxEl.innerHTML = '';
+        items = [];
+        activeIdx = -1;
         const names = getNames();
-        if (!names.length) { boxEl.classList.remove('open'); return; }
+        if (!names.length) { close(); return; }
         // Empty query (e.g. just focused the field) shows the first 25 names,
         // same as a native <datalist> would show its full option list on focus.
         const matches = [];
@@ -526,20 +555,40 @@
             const item = document.createElement('div');
             item.className = 'autocomplete-item';
             item.textContent = name;
-            item.addEventListener('mousedown', ev => {
-              ev.preventDefault();
-              inputEl.value = name;
-              inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-              boxEl.classList.remove('open');
-            });
+            item.addEventListener('click', ev => { ev.preventDefault(); choose(name); });
             boxEl.appendChild(item);
+            items.push(item);
           });
         }
         boxEl.classList.add('open');
       }
+
+      const hold = () => { holding = true; };
+      const release = () => {
+        holding = false;
+        // If the tap/scroll didn't end in a selection and the field lost focus, close.
+        setTimeout(() => { if (!holding && document.activeElement !== inputEl) close(); }, 400);
+      };
+      boxEl.addEventListener('pointerdown', hold);
+      boxEl.addEventListener('touchstart', hold, { passive: true });
+      boxEl.addEventListener('pointerup', release);
+      boxEl.addEventListener('pointercancel', release);
+      boxEl.addEventListener('touchend', release);
+
       inputEl.addEventListener('input', () => render(inputEl.value));
-      inputEl.addEventListener('focus', () => render(inputEl.value));
-      inputEl.addEventListener('blur', () => setTimeout(() => boxEl.classList.remove('open'), 150));
+      inputEl.addEventListener('focus', () => {
+        render(inputEl.value);
+        // Keep the field and its list visible above the mobile keyboard.
+        setTimeout(() => inputEl.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300);
+      });
+      inputEl.addEventListener('blur', () => setTimeout(() => { if (!holding) close(); }, 200));
+      inputEl.addEventListener('keydown', ev => {
+        if (!boxEl.classList.contains('open') || !items.length) return;
+        if (ev.key === 'ArrowDown') { ev.preventDefault(); setActive(Math.min(activeIdx + 1, items.length - 1)); }
+        else if (ev.key === 'ArrowUp') { ev.preventDefault(); setActive(Math.max(activeIdx - 1, 0)); }
+        else if (ev.key === 'Enter' && activeIdx >= 0) { ev.preventDefault(); choose(items[activeIdx].textContent); }
+        else if (ev.key === 'Escape') { close(); }
+      });
     }
 
     function onAdmins(res) {
