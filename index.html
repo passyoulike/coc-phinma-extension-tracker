@@ -302,7 +302,16 @@
 
       <!-- ================= SUMMARY TAB ================= -->
       <div class="card section" id="summarySection">
-        <h3 style="margin-top:0">Summary per Clinical Instructor</h3>
+        <h3 style="margin-top:0">Most Common Incidents</h3>
+        <p class="small">Ranked from most to least frequent. Rendered hours are not counted as incidents.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th style="width:34px">#</th><th>Incident</th><th style="text-align:right">Times</th><th style="text-align:right">Hours</th></tr></thead>
+            <tbody id="sumIncBody"><tr><td colspan="4">Open this tab to load…</td></tr></tbody>
+          </table>
+        </div>
+
+        <h3 style="margin-top:26px">Summary per Clinical Instructor</h3>
         <p class="small">Number of students and total extension hours for each Clinical Instructor.</p>
         <div class="stat-row">
           <div class="stat"><div class="num" id="sumGrandStudents">-</div><div class="lbl">Students</div></div>
@@ -1180,14 +1189,32 @@
       summaryLoaded = true;
       const body = document.getElementById('sumBody');
       body.innerHTML = '<tr><td colspan="3">Loading…</td></tr>';
+      document.getElementById('sumIncBody').innerHTML = '<tr><td colspan="4">Loading…</td></tr>';
       callServer('getSummary').then(res => {
         if (!res || res.status !== 'success') {
           summaryLoaded = false;
           body.innerHTML = '<tr><td colspan="3">Could not load.</td></tr>';
+          document.getElementById('sumIncBody').innerHTML = '<tr><td colspan="4">Could not load.</td></tr>';
           showMsg('sumMsg', (res && res.message) || 'Failed to load the summary.', true);
           return;
         }
         body.innerHTML = '';
+        const incBody = document.getElementById('sumIncBody');
+        incBody.innerHTML = '';
+        const incidents = res.incidents || [];
+        if (!incidents.length) { incBody.innerHTML = '<tr><td colspan="4">No incidents recorded yet.</td></tr>'; }
+        incidents.forEach((x, i) => {
+          const tr = document.createElement('tr');
+          const cells = [String(i + 1), x.incident, String(x.count), String(x.totalHours)];
+          cells.forEach((t, ci) => {
+            const td = document.createElement('td');
+            td.textContent = t;
+            if (ci >= 2) td.style.textAlign = 'right';
+            if (ci === 2) td.style.fontWeight = '700';
+            tr.appendChild(td);
+          });
+          incBody.appendChild(tr);
+        });
         if (!res.list.length) { body.innerHTML = '<tr><td colspan="3">No data yet.</td></tr>'; }
         res.list.forEach(x => {
           const tr = document.createElement('tr');
@@ -1202,6 +1229,7 @@
       }).catch(err => {
         summaryLoaded = false;
         body.innerHTML = '<tr><td colspan="3">Could not load.</td></tr>';
+        document.getElementById('sumIncBody').innerHTML = '<tr><td colspan="4">Could not load.</td></tr>';
         showMsg('sumMsg', 'Server error: ' + err.message, true);
       });
     }

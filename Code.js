@@ -285,7 +285,7 @@ function getSummary() {
     const values = sheet.getDataRange().getValues();
 
     // Locate the header row (a pivot may have title/filter rows above it).
-    let headerRow = -1, cStudent = -1, cId = -1, cCI = -1, cHours = -1;
+    let headerRow = -1, cStudent = -1, cId = -1, cCI = -1, cHours = -1, cIncident = -1;
     for (let r = 0; r < Math.min(values.length, 15); r++) {
       const norm = values[r].map(_normalizeHeader);
       const ci = norm.findIndex(h => h === 'ci name');
@@ -294,6 +294,7 @@ function getSummary() {
         headerRow = r; cCI = ci; cHours = hrs;
         cStudent = norm.findIndex(h => h === 'student name');
         cId = norm.findIndex(h => h === 'student id');
+        cIncident = norm.findIndex(h => h === 'incident');
         break;
       }
     }
@@ -303,6 +304,8 @@ function getSummary() {
     const isTotal = s => /\btotal\b/i.test(s);
     let lastStudent = '', lastId = '', lastCI = '';
     const byCI = {};
+    const byIncident = {};
+    const isRendered = s => /\brender(ed)?\b/i.test(s); // 'Rendered: 2 hours' etc. are hours worked off, not incidents
 
     for (let r = headerRow + 1; r < values.length; r++) {
       const row = values[r];
@@ -319,6 +322,17 @@ function getSummary() {
       const raw = row[cHours];
       const hours = typeof raw === 'number' ? raw : parseFloat(cell(raw).replace(/,/g, ''));
       if (isNaN(hours)) continue; // group header row with no hours value
+      // Incident ranking: one DETAILS row = one incident record. Rendered entries are excluded.
+      if (cIncident !== -1) {
+        const inc = cell(row[cIncident]);
+        if (inc && !isRendered(inc)) {
+          const ik = inc.toLowerCase();
+          if (!byIncident[ik]) byIncident[ik] = { incident: inc, count: 0, totalHours: 0 };
+          byIncident[ik].count += 1;
+          byIncident[ik].totalHours += hours;
+        }
+      }
+
       if (!lastCI) continue;
 
       const key = lastCI.toLowerCase();
@@ -339,7 +353,13 @@ function getSummary() {
       students: allStudents.size,
       totalHours: Math.round(list.reduce((a, x) => a + x.totalHours, 0) * 100) / 100
     };
-    return { status: 'success', list, grand };
+    const incidents = Object.keys(byIncident).map(k => ({
+      incident: byIncident[k].incident,
+      count: byIncident[k].count,
+      totalHours: Math.round(byIncident[k].totalHours * 100) / 100
+    })).sort((a, b) => b.count - a.count || b.totalHours - a.totalHours || a.incident.localeCompare(b.incident));
+
+    return { status: 'success', list, grand, incidents };
   } catch (e) {
     return { status: 'error', list: [], message: e.message };
   }
