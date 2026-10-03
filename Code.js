@@ -179,6 +179,96 @@ function getIncidents() {
   }
 }
 
+/* ================= MANAGE INCIDENTS (Admin-only) =================
+   Incident sheet layout is fixed: column A = incident name, column B = hours,
+   header in row 1. Rows are addressed by sheet row number (loaded fresh into the
+   grid), and every write re-checks the row's name first so a stale grid can't
+   edit or delete the wrong row. */
+
+function _incidentAdminSheet() {
+  const ss = openActiveSpreadsheet();
+  const sheet = ss.getSheetByName(INCIDENT_SHEET_NAME);
+  if (!sheet) throw new Error('Sheet "' + INCIDENT_SHEET_NAME + '" not found.');
+  return sheet;
+}
+
+function _parseHours(v) {
+  const s = String(v === undefined || v === null ? '' : v).trim();
+  if (s !== '' && !isNaN(Number(s))) return Number(s);
+  return s;
+}
+
+function getIncidentsAdmin(adminUser, adminPass) {
+  try {
+    _requireAdmin(adminUser, adminPass);
+    const sheet = _incidentAdminSheet();
+    const lastRow = sheet.getLastRow();
+    const values = lastRow >= 2 ? sheet.getRange(2, 1, lastRow - 1, 2).getValues() : [];
+    const list = [];
+    values.forEach((r, i) => {
+      const name = String(r[0] || '').trim();
+      if (!name) return;
+      list.push({ rowNum: i + 2, name, hours: String(r[1] === undefined || r[1] === null ? '' : r[1]).trim() });
+    });
+    return { status: 'success', list };
+  } catch (e) {
+    return { status: 'error', list: [], message: e.message };
+  }
+}
+
+// rows: [{ rowNum?, originalName?, name, hours }] — rows with a rowNum update that
+// sheet row (only if its current name still matches originalName); rows without
+// one are appended as new incidents.
+function saveIncidents(adminUser, adminPass, rows) {
+  try {
+    _requireAdmin(adminUser, adminPass);
+    if (!Array.isArray(rows) || !rows.length) return { status: 'error', message: 'Nothing to save.' };
+    const sheet = _incidentAdminSheet();
+    let added = 0, updated = 0, skipped = 0, conflicts = 0;
+    rows.forEach(r => {
+      const name = String(r.name || '').trim();
+      if (!name) { skipped++; return; }
+      const hours = _parseHours(r.hours);
+      if (r.rowNum) {
+        const rowNum = Number(r.rowNum);
+        if (rowNum < 2 || rowNum > sheet.getLastRow()) { conflicts++; return; }
+        const cur = sheet.getRange(rowNum, 1, 1, 2).getValues()[0];
+        if (String(cur[0] || '').trim() !== String(r.originalName || '').trim()) { conflicts++; return; }
+        if (String(cur[0]).trim() === name && String(cur[1]).trim() === String(hours).trim()) return; // unchanged
+        sheet.getRange(rowNum, 1, 1, 2).setValues([[name, hours]]);
+        updated++;
+      } else {
+        sheet.appendRow([name, hours]);
+        added++;
+      }
+    });
+    return { status: 'success', added, updated, skipped, conflicts };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
+// items: [{ rowNum, name }] — a row is only deleted if its name still matches.
+function removeIncidents(adminUser, adminPass, items) {
+  try {
+    _requireAdmin(adminUser, adminPass);
+    if (!Array.isArray(items) || !items.length) return { status: 'error', message: 'Select at least one incident.' };
+    const sheet = _incidentAdminSheet();
+    let removed = 0, conflicts = 0;
+    items.slice().sort((a, b) => Number(b.rowNum) - Number(a.rowNum)).forEach(it => {
+      const rowNum = Number(it.rowNum);
+      if (rowNum < 2 || rowNum > sheet.getLastRow()) { conflicts++; return; }
+      const curName = String(sheet.getRange(rowNum, 1).getValue() || '').trim();
+      if (curName !== String(it.name || '').trim()) { conflicts++; return; }
+      sheet.deleteRow(rowNum);
+      removed++;
+    });
+    return { status: 'success', removed, conflicts };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
 /* ================= PRESENCE ("online now" counter) ================= */
 
 function _presenceSheet() {
@@ -782,5 +872,6 @@ const API_ACTIONS = {
   submitEntry, bulkAddExtensionEntries,
   bulkAddStudents, removeStudents,
   bulkAddCIs, removeCIs,
-  heartbeat, getOnlineCount
+  heartbeat, getOnlineCount,
+  getIncidentsAdmin, saveIncidents, removeIncidents
 };

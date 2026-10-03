@@ -122,17 +122,17 @@
       tbody tr:hover { background: rgba(20,184,166,0.05); }
       .table-wrap { overflow-x:auto; border-radius: var(--radius-sm); border: 1px solid var(--border); max-height: 320px; overflow-y: auto; }
 
-      #ciSheetTable td { padding:4px 6px; }
-      #ciSheetTable input[type="text"] {
+      #ciSheetTable td , #incSheetTable td  { padding:4px 6px; }
+      #ciSheetTable input[type="text"] , #incSheetTable input[type="text"]  {
         width:100%; margin:0; padding:7px 8px; font-size:13px; border-radius:6px;
         border:1.5px solid transparent; background:transparent;
       }
-      #ciSheetTable input[type="text"]:hover { background: var(--surface-muted); }
-      #ciSheetTable input[type="text"]:focus { background:#fff; border-color: var(--primary-light); box-shadow: 0 0 0 2px rgba(20,184,166,0.15); }
-      #ciSheetTable input[type="checkbox"] { display:block; width:16px; height:16px; margin:0; accent-color:#a12a2a; }
-      #ciSheetTable tr.new-row { background: rgba(20,184,166,0.06); }
-      #ciSheetTable tr.row-selected { background: #fdecea; }
-      #ciSheetTable tr.row-selected input[type="text"] { background: #fff5f4; }
+      #ciSheetTable input[type="text"]:hover , #incSheetTable input[type="text"]:hover  { background: var(--surface-muted); }
+      #ciSheetTable input[type="text"]:focus , #incSheetTable input[type="text"]:focus  { background:#fff; border-color: var(--primary-light); box-shadow: 0 0 0 2px rgba(20,184,166,0.15); }
+      #ciSheetTable input[type="checkbox"] , #incSheetTable input[type="checkbox"]  { display:block; width:16px; height:16px; margin:0; accent-color:#a12a2a; }
+      #ciSheetTable tr.new-row , #incSheetTable tr.new-row  { background: rgba(20,184,166,0.06); }
+      #ciSheetTable tr.row-selected , #incSheetTable tr.row-selected  { background: #fdecea; }
+      #ciSheetTable tr.row-selected input[type="text"] , #incSheetTable tr.row-selected input[type="text"]  { background: #fff5f4; }
 
       #manageRosterTable input[type="checkbox"] { display:block; width:16px; height:16px; margin:0; accent-color:#a12a2a; }
       #manageRosterTable tr.row-selected { background: #fdecea; }
@@ -322,6 +322,7 @@
           <div class="subtabs" role="tablist" aria-label="Admin tools">
             <button class="subtab-btn active" id="subtabAdminCIBtn">👩‍⚕️ Clinical Instructors</button>
             <button class="subtab-btn" id="subtabAdminStudentsBtn">🎓 Students</button>
+            <button class="subtab-btn" id="subtabAdminIncidentsBtn">⚠️ Incidents</button>
           </div>
 
           <div class="subsection active" id="adminCISub">
@@ -365,6 +366,24 @@
             </div>
             <button class="secondary" id="manageRemoveSelectedBtn" style="border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
             <div id="manageRemoveMsg" class="msg"></div>
+          </div>
+
+          <div class="subsection" id="adminIncidentsSub">
+            <p class="small"><span id="incCount">0</span> incident types on the list.</p>
+            <h4>Incident List</h4>
+            <p class="small">Type directly into the grid — Incident name and Number of hours (use a negative number for hours rendered). Blank rows at the bottom are for new incidents. Check a row (highlighted red) to mark it for removal.</p>
+            <div class="table-wrap" style="max-height:none">
+              <table id="incSheetTable">
+                <thead><tr><th style="width:32px"><input type="checkbox" id="incSelectAll" title="Select all"></th><th>Incident</th><th style="width:90px">Hours</th></tr></thead>
+                <tbody id="incSheetBody"></tbody>
+              </table>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <button class="secondary" id="incAddRowBtn" style="margin:0">+ Add Row</button>
+              <button id="incSaveBtn" style="margin:0">Save Changes</button>
+              <button class="secondary" id="incRemoveSelectedBtn" style="margin:0;border-color:#a12a2a;color:#a12a2a">Remove Selected</button>
+            </div>
+            <div id="incSheetMsg" class="msg"></div>
           </div>
         </div>
       </div>
@@ -452,7 +471,8 @@
     /* ---------- Admin sub-tab switching ---------- */
     const adminSubtabs = {
       ci: { btn: 'subtabAdminCIBtn', section: 'adminCISub' },
-      students: { btn: 'subtabAdminStudentsBtn', section: 'adminStudentsSub' }
+      students: { btn: 'subtabAdminStudentsBtn', section: 'adminStudentsSub' },
+      incidents: { btn: 'subtabAdminIncidentsBtn', section: 'adminIncidentsSub' }
     };
     function setActiveAdminSubtab(name) {
       Object.keys(adminSubtabs).forEach(k => {
@@ -462,6 +482,7 @@
     }
     document.getElementById('subtabAdminCIBtn').addEventListener('click', () => setActiveAdminSubtab('ci'));
     document.getElementById('subtabAdminStudentsBtn').addEventListener('click', () => setActiveAdminSubtab('students'));
+    document.getElementById('subtabAdminIncidentsBtn').addEventListener('click', () => setActiveAdminSubtab('incidents'));
 
     function showMsg(elId, txt, isErr) {
       const el = document.getElementById(elId);
@@ -908,6 +929,7 @@
         document.getElementById('adminWorkBox').classList.remove('hidden');
         loadAdminRoster();
         loadManageRoster();
+        loadIncidentGrid();
       }).catch(err => {
         document.getElementById('adminLoginBtn').disabled = false;
         showMsg('adminLoginMsg', 'Server error: ' + err.message, true);
@@ -1019,6 +1041,113 @@
       }).catch(err => {
         document.getElementById('ciRemoveSelectedBtn').disabled = false;
         showMsg('ciSheetMsg', 'Server error: ' + err.message, true);
+      });
+    });
+
+    /* ================= INCIDENT GRID (Admin, spreadsheet-style) ================= */
+    function incRow(inc, isNew) {
+      const tr = document.createElement('tr');
+      if (isNew) tr.classList.add('new-row');
+      else { tr.setAttribute('data-row-num', inc.rowNum); tr.setAttribute('data-original-name', inc.name); }
+      const esc = s => String(s === undefined || s === null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      tr.innerHTML =
+        '<td><input type="checkbox" class="inc-row-check"></td>' +
+        '<td><input type="text" class="inc-row-name" value="' + esc(inc.name) + '" placeholder="Incident name"></td>' +
+        '<td><input type="text" class="inc-row-hours" inputmode="decimal" value="' + esc(inc.hours) + '" placeholder="Hours"></td>';
+      tr.querySelector('.inc-row-check').addEventListener('change', e => {
+        tr.classList.toggle('row-selected', e.target.checked);
+        incSyncSelectAll();
+      });
+      return tr;
+    }
+
+    function incSyncSelectAll() {
+      const boxes = Array.from(document.querySelectorAll('#incSheetBody .inc-row-check'));
+      const all = document.getElementById('incSelectAll');
+      all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+      all.indeterminate = boxes.some(b => b.checked) && !all.checked;
+    }
+
+    function loadIncidentGrid() {
+      callServer('getIncidentsAdmin', currentAdmin, currentAdminPass).then(res => {
+        const body = document.getElementById('incSheetBody');
+        body.innerHTML = '';
+        const list = (res && res.status === 'success') ? res.list : [];
+        document.getElementById('incCount').textContent = list.length;
+        list.forEach(inc => body.appendChild(incRow(inc, false)));
+        body.appendChild(incRow({ name: '', hours: '' }, true));
+        const all = document.getElementById('incSelectAll');
+        all.checked = false;
+        all.indeterminate = false;
+      });
+    }
+
+    // Keep the CI Single-entry Incident dropdown in step with admin edits.
+    function refreshIncidentDropdown() {
+      callServer('getIncidents').then(onIncidents).catch(() => {});
+    }
+
+    document.getElementById('incAddRowBtn').addEventListener('click', () => {
+      document.getElementById('incSheetBody').appendChild(incRow({ name: '', hours: '' }, true));
+    });
+
+    document.getElementById('incSelectAll').addEventListener('change', e => {
+      const checked = e.target.checked;
+      document.querySelectorAll('#incSheetBody tr').forEach(tr => {
+        tr.querySelector('.inc-row-check').checked = checked;
+        tr.classList.toggle('row-selected', checked);
+      });
+    });
+
+    document.getElementById('incSaveBtn').addEventListener('click', () => {
+      const rows = Array.from(document.querySelectorAll('#incSheetBody tr')).map(tr => ({
+        rowNum: tr.getAttribute('data-row-num') || '',
+        originalName: tr.getAttribute('data-original-name') || '',
+        name: tr.querySelector('.inc-row-name').value.trim(),
+        hours: tr.querySelector('.inc-row-hours').value.trim()
+      })).filter(r => r.name);
+      if (!rows.length) { showMsg('incSheetMsg', 'Nothing to save — fill in at least an incident name.', true); return; }
+      const bad = rows.find(r => r.hours !== '' && isNaN(Number(r.hours)) && !r.rowNum);
+      if (bad) { showMsg('incSheetMsg', 'Hours must be a number (e.g. 4, or -2 for hours rendered): ' + bad.name, true); return; }
+      document.getElementById('incSaveBtn').disabled = true;
+      callServer('saveIncidents', currentAdmin, currentAdminPass, rows).then(res => {
+        document.getElementById('incSaveBtn').disabled = false;
+        if (res && res.status === 'success') {
+          const conf = res.conflicts ? (', ' + res.conflicts + ' skipped because the sheet changed — reloaded') : '';
+          showMsg('incSheetMsg', 'Saved — added ' + res.added + ', updated ' + res.updated + conf + '.', false);
+          loadIncidentGrid();
+          refreshIncidentDropdown();
+        } else {
+          showMsg('incSheetMsg', (res && res.message) || 'Failed to save.', true);
+        }
+      }).catch(err => {
+        document.getElementById('incSaveBtn').disabled = false;
+        showMsg('incSheetMsg', 'Server error: ' + err.message, true);
+      });
+    });
+
+    document.getElementById('incRemoveSelectedBtn').addEventListener('click', () => {
+      const checked = Array.from(document.querySelectorAll('#incSheetBody tr')).filter(tr => tr.querySelector('.inc-row-check').checked);
+      if (!checked.length) { showMsg('incSheetMsg', 'Check at least one row to remove.', true); return; }
+      const items = checked.filter(tr => tr.hasAttribute('data-row-num'))
+        .map(tr => ({ rowNum: tr.getAttribute('data-row-num'), name: tr.getAttribute('data-original-name') }));
+      // Unsaved new rows are simply discarded client-side.
+      checked.filter(tr => !tr.hasAttribute('data-row-num')).forEach(tr => tr.remove());
+      if (!items.length) return;
+      document.getElementById('incRemoveSelectedBtn').disabled = true;
+      callServer('removeIncidents', currentAdmin, currentAdminPass, items).then(res => {
+        document.getElementById('incRemoveSelectedBtn').disabled = false;
+        if (res && res.status === 'success') {
+          const conf = res.conflicts ? (', ' + res.conflicts + ' skipped because the sheet changed') : '';
+          showMsg('incSheetMsg', 'Removed ' + res.removed + conf + '.', false);
+          loadIncidentGrid();
+          refreshIncidentDropdown();
+        } else {
+          showMsg('incSheetMsg', (res && res.message) || 'Failed to remove.', true);
+        }
+      }).catch(err => {
+        document.getElementById('incRemoveSelectedBtn').disabled = false;
+        showMsg('incSheetMsg', 'Server error: ' + err.message, true);
       });
     });
 
