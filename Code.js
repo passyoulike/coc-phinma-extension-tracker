@@ -8,6 +8,7 @@ const EXTENSION_SHEET_NAME = 'Extension';
 const FULL_REPORT_SHEET_NAME = 'Full Report';
 const CI_LOGIN_LOG_SHEET_NAME = 'CI Login Log';
 const ADMIN_SHEET_NAME = 'Admin';
+const DETAILS_SHEET_NAME = 'DETAILS';
 const PRESENCE_SHEET_NAME = 'Presence';
 const PRESENCE_ONLINE_WINDOW_MS = 90 * 1000; // a session counts as "online" if seen in the last 90s
 const PRESENCE_STALE_ROW_MS = 60 * 60 * 1000; // rows older than 1h are pruned on each call
@@ -266,6 +267,81 @@ function removeIncidents(adminUser, adminPass, items) {
     return { status: 'success', removed, conflicts };
   } catch (e) {
     return { status: 'error', message: e.message };
+  }
+}
+
+/* ================= SUMMARY (per Clinical Instructor, from the DETAILS tab) =================
+   DETAILS is a pivot-style sheet: STUDENT NAME | STUDENT ID | CI NAME | REMARKS | INCIDENT |
+   SUM of HOURS. Pivots only print a label on the first row of each group, so blank
+   STUDENT NAME / STUDENT ID / CI NAME cells are filled down from the row above. Subtotal and
+   grand-total rows are skipped. Per CI: distinct students and the net sum of hours
+   (rendered hours are negative, so they reduce the total). */
+
+function getSummary() {
+  try {
+    const ss = openActiveSpreadsheet();
+    const sheet = ss.getSheetByName(DETAILS_SHEET_NAME);
+    if (!sheet) return { status: 'error', list: [], message: 'Sheet "' + DETAILS_SHEET_NAME + '" not found.' };
+    const values = sheet.getDataRange().getValues();
+
+    // Locate the header row (a pivot may have title/filter rows above it).
+    let headerRow = -1, cStudent = -1, cId = -1, cCI = -1, cHours = -1;
+    for (let r = 0; r < Math.min(values.length, 15); r++) {
+      const norm = values[r].map(_normalizeHeader);
+      const ci = norm.findIndex(h => h === 'ci name');
+      const hrs = norm.findIndex(h => /sum of hours|^hours$/.test(h));
+      if (ci !== -1 && hrs !== -1) {
+        headerRow = r; cCI = ci; cHours = hrs;
+        cStudent = norm.findIndex(h => h === 'student name');
+        cId = norm.findIndex(h => h === 'student id');
+        break;
+      }
+    }
+    if (headerRow === -1) return { status: 'error', list: [], message: 'Could not find the CI NAME / SUM of HOURS headers on the "' + DETAILS_SHEET_NAME + '" tab.' };
+
+    const cell = v => String(v === undefined || v === null ? '' : v).trim();
+    const isTotal = s => /\btotal\b/i.test(s);
+    let lastStudent = '', lastId = '', lastCI = '';
+    const byCI = {};
+
+    for (let r = headerRow + 1; r < values.length; r++) {
+      const row = values[r];
+      const student = cStudent !== -1 ? cell(row[cStudent]) : '';
+      const id = cId !== -1 ? cell(row[cId]) : '';
+      const ci = cell(row[cCI]);
+
+      if (isTotal(student) || isTotal(id) || isTotal(ci)) continue; // pivot subtotal / grand total
+
+      if (student) { lastStudent = student; if (!ci) lastCI = ''; } // new student group restarts the CI fill
+      if (id) lastId = id;
+      if (ci) lastCI = ci;
+
+      const raw = row[cHours];
+      const hours = typeof raw === 'number' ? raw : parseFloat(cell(raw).replace(/,/g, ''));
+      if (isNaN(hours)) continue; // group header row with no hours value
+      if (!lastCI) continue;
+
+      const key = lastCI.toLowerCase();
+      if (!byCI[key]) byCI[key] = { ciName: lastCI, students: new Set(), totalHours: 0 };
+      byCI[key].students.add((lastId || lastStudent).toLowerCase());
+      byCI[key].totalHours += hours;
+    }
+
+    const list = Object.keys(byCI).map(k => ({
+      ciName: byCI[k].ciName,
+      students: byCI[k].students.size,
+      totalHours: Math.round(byCI[k].totalHours * 100) / 100
+    })).sort((a, b) => a.ciName.localeCompare(b.ciName, 'en', { sensitivity: 'base' }));
+
+    const allStudents = new Set();
+    Object.keys(byCI).forEach(k => byCI[k].students.forEach(s => allStudents.add(s)));
+    const grand = {
+      students: allStudents.size,
+      totalHours: Math.round(list.reduce((a, x) => a + x.totalHours, 0) * 100) / 100
+    };
+    return { status: 'success', list, grand };
+  } catch (e) {
+    return { status: 'error', list: [], message: e.message };
   }
 }
 
@@ -873,5 +949,6 @@ const API_ACTIONS = {
   bulkAddStudents, removeStudents,
   bulkAddCIs, removeCIs,
   heartbeat, getOnlineCount,
-  getIncidentsAdmin, saveIncidents, removeIncidents
+  getIncidentsAdmin, saveIncidents, removeIncidents,
+  getSummary
 };
