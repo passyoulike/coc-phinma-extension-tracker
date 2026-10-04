@@ -365,6 +365,128 @@ function getSummary() {
   }
 }
 
+/* ================= POSSIBLE DUPLICATE CI NAMES (sheet menu) =================
+   Adds a "CI Tools" menu to the spreadsheet. "Highlight similar CI names" colors rows of the
+   CI List tab whose names are probably the same person written differently, one color per
+   group of matches, and leaves a note on each saying what it matched. Names are compared
+   ignoring case, accents, punctuation, word order ("LAST, First" vs "First Last") and
+   one-letter initials, and tolerate a one-letter typo or an abbreviation ("MA." vs "MARIA"). */
+
+function onOpen() {
+  SpreadsheetApp.getUi().createMenu('🔍 CI Tools')
+    .addItem('Highlight similar CI names', 'highlightSimilarCIs')
+    .addItem('Clear highlights', 'clearCIHighlights')
+    .addToUi();
+}
+
+function _nameTokens(name) {
+  return String(name || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+    .split(' ').filter(t => t.length > 1); // drop empty bits and one-letter initials
+}
+
+function _editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (!m) return n;
+  if (!n) return m;
+  let prev = [];
+  for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+function _tokensMatch(a, b) {
+  if (a === b) return true;
+  const short = a.length <= b.length ? a : b;
+  const long = a.length <= b.length ? b : a;
+  if (short.length <= 3 && long.startsWith(short)) return true;        // "ma" ~ "maria"
+  if (a.length >= 5 && b.length >= 5 && _editDistance(a, b) <= 1) return true; // one-letter typo
+  return false;
+}
+
+// Two names are "almost the same" when every word of the shorter name (at least two
+// words, or one word when both names are a single word) has a matching word in the longer.
+function _namesSimilar(tokensA, tokensB) {
+  if (!tokensA.length || !tokensB.length) return false;
+  const shorter = tokensA.length <= tokensB.length ? tokensA : tokensB;
+  const longer = tokensA.length <= tokensB.length ? tokensB : tokensA;
+  if (shorter.length < 2 && longer.length >= 2) return false;
+  const used = new Set();
+  return shorter.every(t => {
+    const idx = longer.findIndex((u, i) => !used.has(i) && _tokensMatch(t, u));
+    if (idx === -1) return false;
+    used.add(idx);
+    return true;
+  });
+}
+
+// Returns groups (arrays of indexes into `names`) of two or more similar names.
+function _similarNameGroups(names) {
+  const toks = names.map(_nameTokens);
+  const parent = names.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (let i = 0; i < names.length; i++) {
+    for (let j = i + 1; j < names.length; j++) {
+      if (_namesSimilar(toks[i], toks[j])) parent[find(j)] = find(i);
+    }
+  }
+  const groups = {};
+  names.forEach((_, i) => { if (toks[i].length) (groups[find(i)] = groups[find(i)] || []).push(i); });
+  return Object.keys(groups).map(k => groups[k]).filter(g => g.length > 1);
+}
+
+function highlightSimilarCIs() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = openActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CI_SHEET_NAME);
+  if (!sheet) { ui.alert('Sheet "' + CI_SHEET_NAME + '" not found.'); return; }
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 2) { ui.alert('No CI names to check.'); return; }
+
+  const lastCol = Math.max(sheet.getLastColumn(), 2);
+  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => String(r[0] || '').trim());
+
+  // Reset anything this tool (or anyone) colored before, so re-running starts clean.
+  sheet.getRange(2, 1, lastRow - 1, lastCol).setBackground(null);
+  sheet.getRange(2, 1, lastRow - 1, 1).clearNote();
+
+  const groups = _similarNameGroups(names);
+  const palette = ['#fde68a', '#fecaca', '#bfdbfe', '#bbf7d0', '#e9d5ff', '#fed7aa', '#a5f3fc', '#fbcfe8'];
+  const lines = [];
+  groups.forEach((g, gi) => {
+    const color = palette[gi % palette.length];
+    g.forEach(i => {
+      const row = i + 2;
+      sheet.getRange(row, 1, 1, lastCol).setBackground(color);
+      const others = g.filter(x => x !== i).map(x => 'row ' + (x + 2) + ': ' + names[x]).join('\n');
+      sheet.getRange(row, 1).setNote('Possible duplicate of:\n' + others);
+    });
+    lines.push((gi + 1) + '. ' + g.map(i => names[i] + ' (row ' + (i + 2) + ')').join('  ≈  '));
+  });
+
+  if (!groups.length) { ui.alert('No similar CI names found among ' + names.filter(Boolean).length + ' names.'); return; }
+  ui.alert(groups.length + ' possible duplicate group(s) highlighted',
+    lines.join('\n') + '\n\nRows in the same group share a color. Hover over a name for a note.',
+    ui.ButtonSet.OK);
+}
+
+function clearCIHighlights() {
+  const ss = openActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CI_SHEET_NAME);
+  if (!sheet || sheet.getLastRow() < 2) return;
+  const lastCol = Math.max(sheet.getLastColumn(), 2);
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).setBackground(null);
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).clearNote();
+  SpreadsheetApp.getUi().alert('Highlights cleared.');
+}
+
 /* ================= PRESENCE ("online now" counter) ================= */
 
 function _presenceSheet() {
