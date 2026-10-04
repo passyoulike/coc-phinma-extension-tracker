@@ -366,16 +366,16 @@ function getSummary() {
 }
 
 /* ================= POSSIBLE DUPLICATE CI NAMES (sheet menu) =================
-   Adds a "CI Tools" menu to the spreadsheet. "Highlight similar CI names" colors rows of the
-   CI List tab whose names are probably the same person written differently, one color per
-   group of matches, and leaves a note on each saying what it matched. Names are compared
+   Adds a "CI Tools" menu to the spreadsheet. "Color possible duplicates (live)" sets up conditional formatting on the
+   CI List tab so names that are probably the same person written differently share a color
+   (one color per group), and stays up to date as names change. Names are compared
    ignoring case, accents, punctuation, word order ("LAST, First" vs "First Last") and
    one-letter initials, and tolerate a one-letter typo or an abbreviation ("MA." vs "MARIA"). */
 
 function onOpen() {
   SpreadsheetApp.getUi().createMenu('🔍 CI Tools')
-    .addItem('Highlight similar CI names', 'highlightSimilarCIs')
-    .addItem('Clear highlights', 'clearCIHighlights')
+    .addItem('Color possible duplicates (live)', 'colorPossibleDuplicates')
+    .addItem('Remove duplicate colors', 'removeDuplicateColors')
     .addToUi();
 }
 
@@ -430,61 +430,100 @@ function _namesSimilar(tokensA, tokensB) {
 // Returns groups (arrays of indexes into `names`) of two or more similar names.
 function _similarNameGroups(names) {
   const toks = names.map(_nameTokens);
+  // Only real names take part: the sheet passes hundreds of blank rows below the list,
+  // and comparing those against each other made the formula far too slow.
+  const real = [];
+  toks.forEach((t, i) => { if (t.length) real.push(i); });
   const parent = names.map((_, i) => i);
   const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
-  for (let i = 0; i < names.length; i++) {
-    for (let j = i + 1; j < names.length; j++) {
+  for (let x = 0; x < real.length; x++) {
+    for (let y = x + 1; y < real.length; y++) {
+      const i = real[x], j = real[y];
       if (_namesSimilar(toks[i], toks[j])) parent[find(j)] = find(i);
     }
   }
   const groups = {};
-  names.forEach((_, i) => { if (toks[i].length) (groups[find(i)] = groups[find(i)] || []).push(i); });
+  real.forEach(i => { (groups[find(i)] = groups[find(i)] || []).push(i); });
   return Object.keys(groups).map(k => groups[k]).filter(g => g.length > 1);
 }
 
-function highlightSimilarCIs() {
+/**
+ * Custom sheet function: =SIMILAR_GROUP(A2:A)
+ * Returns, for every name, the number of its possible-duplicate group (blank when the name
+ * has no look-alike). Recalculates on its own whenever names are added, edited or removed,
+ * which is what keeps the conditional-formatting colors live.
+ * @param {string[][]} range The CI names.
+ * @return {number[][]} One group number (or blank) per name.
+ * @customfunction
+ */
+function SIMILAR_GROUP(range) {
+  const names = (Array.isArray(range) ? range : [[range]]).map(r => String((Array.isArray(r) ? r[0] : r) || '').trim());
+  let last = names.length - 1;
+  while (last > 0 && !names[last]) last--;
+  const out = names.slice(0, last + 1).map(() => ['']);
+  _similarNameGroups(names).forEach((g, gi) => g.forEach(i => { if (i <= last) out[i][0] = gi + 1; }));
+  return out;
+}
+
+const DUP_COLOR_PALETTE = ['#fde68a', '#fecaca', '#bfdbfe', '#bbf7d0', '#e9d5ff', '#fed7aa', '#a5f3fc', '#fbcfe8'];
+const DUP_HELPER_HEADER = 'DUP GROUP';
+
+function _isDupColorRule(rule) {
+  const cond = rule.getBooleanCondition && rule.getBooleanCondition();
+  if (!cond || cond.getCriteriaType() !== SpreadsheetApp.BooleanCriteria.CUSTOM_FORMULA) return false;
+  return /^=AND\(ISNUMBER\(\$D2\),MOD\(\$D2,8\)=\d\)$/.test(String(cond.getCriteriaValues()[0] || ''));
+}
+
+// Sets up live conditional formatting on the CI List tab: column D holds the
+// SIMILAR_GROUP() result and 8 color rules paint rows A:B by group number.
+function colorPossibleDuplicates() {
   const ui = SpreadsheetApp.getUi();
-  const ss = openActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CI_SHEET_NAME);
+  const sheet = openActiveSpreadsheet().getSheetByName(CI_SHEET_NAME);
   if (!sheet) { ui.alert('Sheet "' + CI_SHEET_NAME + '" not found.'); return; }
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) { ui.alert('No CI names to check.'); return; }
 
-  const lastCol = Math.max(sheet.getLastColumn(), 2);
-  const names = sheet.getRange(2, 1, lastRow - 1, 1).getValues().map(r => String(r[0] || '').trim());
+  const header = String(sheet.getRange('D1').getValue() || '').trim();
+  if (header && header !== DUP_HELPER_HEADER) { // anything else in D is somebody's own data
+    ui.alert('Column D on the "' + CI_SHEET_NAME + '" tab already has "' + header + '" in it. Move or clear it first — this tool needs column D for its helper formula.');
+    return;
+  }
 
-  // Reset anything this tool (or anyone) colored before, so re-running starts clean.
-  sheet.getRange(2, 1, lastRow - 1, lastCol).setBackground(null);
+  // Remove the old one-time (static) highlights, if any, so only the live rules color rows.
+  const lastRow = Math.max(sheet.getLastRow(), 2);
+  sheet.getRange(2, 1, lastRow - 1, 2).setBackground(null);
   sheet.getRange(2, 1, lastRow - 1, 1).clearNote();
 
-  const groups = _similarNameGroups(names);
-  const palette = ['#fde68a', '#fecaca', '#bfdbfe', '#bbf7d0', '#e9d5ff', '#fed7aa', '#a5f3fc', '#fbcfe8'];
-  const lines = [];
-  groups.forEach((g, gi) => {
-    const color = palette[gi % palette.length];
-    g.forEach(i => {
-      const row = i + 2;
-      sheet.getRange(row, 1, 1, lastCol).setBackground(color);
-      const others = g.filter(x => x !== i).map(x => 'row ' + (x + 2) + ': ' + names[x]).join('\n');
-      sheet.getRange(row, 1).setNote('Possible duplicate of:\n' + others);
-    });
-    lines.push((gi + 1) + '. ' + g.map(i => names[i] + ' (row ' + (i + 2) + ')').join('  ≈  '));
-  });
+  // One array formula in the header cell: D1 = "DUP GROUP", D2.. = group numbers. Living in row 1
+  // means deleting a CI row (even the first one) can never remove it.
+  sheet.getRange('D2:D').clearContent();
+  sheet.getRange('D1').setFormula('={"' + DUP_HELPER_HEADER + '";SIMILAR_GROUP(A2:A)}').setFontWeight('bold');
+  sheet.getRange('D1:D').setHorizontalAlignment('center');
 
-  if (!groups.length) { ui.alert('No similar CI names found among ' + names.filter(Boolean).length + ' names.'); return; }
-  ui.alert(groups.length + ' possible duplicate group(s) highlighted',
-    lines.join('\n') + '\n\nRows in the same group share a color. Hover over a name for a note.',
+  const range = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), 2); // A2:B to the bottom
+  const kept = sheet.getConditionalFormatRules().filter(r => !_isDupColorRule(r));
+  const ours = DUP_COLOR_PALETTE.map((color, k) =>
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenFormulaSatisfied('=AND(ISNUMBER($D2),MOD($D2,8)=' + k + ')')
+      .setBackground(color)
+      .setRanges([range])
+      .build());
+  sheet.setConditionalFormatRules(kept.concat(ours));
+  SpreadsheetApp.flush();
+
+  ui.alert('Duplicate colors are now live',
+    'Names that look like the same person share a color on the CI List tab (column D shows each group number).\n\n' +
+    'It updates by itself as names are added, edited or removed.',
     ui.ButtonSet.OK);
 }
 
-function clearCIHighlights() {
-  const ss = openActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CI_SHEET_NAME);
-  if (!sheet || sheet.getLastRow() < 2) return;
-  const lastCol = Math.max(sheet.getLastColumn(), 2);
-  sheet.getRange(2, 1, sheet.getLastRow() - 1, lastCol).setBackground(null);
-  sheet.getRange(2, 1, sheet.getLastRow() - 1, 1).clearNote();
-  SpreadsheetApp.getUi().alert('Highlights cleared.');
+function removeDuplicateColors() {
+  const ui = SpreadsheetApp.getUi();
+  const sheet = openActiveSpreadsheet().getSheetByName(CI_SHEET_NAME);
+  if (!sheet) return;
+  sheet.setConditionalFormatRules(sheet.getConditionalFormatRules().filter(r => !_isDupColorRule(r)));
+  if (String(sheet.getRange('D1').getValue() || '').trim() === DUP_HELPER_HEADER) {
+    sheet.getRange('D1:D').clear();
+  }
+  ui.alert('Duplicate colors removed.');
 }
 
 /* ================= PRESENCE ("online now" counter) ================= */
@@ -1008,8 +1047,9 @@ function _ciSheetInfo() {
   const ss = openActiveSpreadsheet();
   const sheet = ss.getSheetByName(CI_SHEET_NAME);
   if (!sheet) throw new Error('Sheet "' + CI_SHEET_NAME + '" not found.');
-  const lastCol = Math.max(sheet.getLastColumn(), 2);
-  return { sheet, headers: new Array(lastCol).fill(''), nameCol: 0, passCol: 1 };
+  // Only columns A:B belong to the CI roster; anything to the right (e.g. the DUP GROUP
+  // helper column) must never be read or overwritten by roster edits.
+  return { sheet, headers: new Array(2).fill(''), nameCol: 0, passCol: 1 };
 }
 
 function bulkAddCIs(adminUser, adminPass, rowsText) {
