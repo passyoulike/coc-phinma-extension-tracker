@@ -376,6 +376,8 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('🔍 CI Tools')
     .addItem('Color possible duplicates (live)', 'colorPossibleDuplicates')
     .addItem('Remove duplicate colors', 'removeDuplicateColors')
+    .addSeparator()
+    .addItem('Remove duplicate Student IDs…', 'removeDuplicateStudentIds')
     .addToUi();
 }
 
@@ -465,8 +467,72 @@ function SIMILAR_GROUP(range) {
   return out;
 }
 
+// Student List version: rows are a possible duplicate when they share the same Student ID
+// OR have almost-the-same name. For ~4,000 names, comparing every pair is too slow, so each
+// name is only compared with names that contain a word starting with the same three letters
+// as its longest word (a name can only match if its longest word matches one of the other's).
+function _studentDupGroups(ids, names) {
+  const n = names.length;
+  const toks = names.map(_nameTokens);
+  const idKeys = ids.map(v => String(v || '').trim() ? _normalizeId(v).toLowerCase() : '');
+  const parent = names.map((_, i) => i);
+  const find = i => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  const union = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) parent[Math.max(ra, rb)] = Math.min(ra, rb); };
+
+  // 1. Same Student ID
+  const seenId = {};
+  idKeys.forEach((k, i) => { if (!k) return; if (seenId[k] === undefined) seenId[k] = i; else union(seenId[k], i); });
+
+  // 2. Almost-the-same name
+  const prefix = t => t.length > 3 ? t.slice(0, 3) : t;
+  const buckets = {};
+  toks.forEach((t, i) => {
+    new Set(t.map(prefix)).forEach(p => { (buckets[p] = buckets[p] || []).push(i); });
+  });
+  toks.forEach((t, i) => {
+    if (!t.length) return;
+    const longest = t.reduce((a, b) => (b.length > a.length ? b : a));
+    (buckets[prefix(longest)] || []).forEach(j => {
+      if (j > i && find(i) !== find(j) && _namesSimilar(t, toks[j])) union(i, j);
+    });
+  });
+
+  const members = {};
+  for (let i = 0; i < n; i++) {
+    if (!toks[i].length && !idKeys[i]) continue;
+    (members[find(i)] = members[find(i)] || []).push(i);
+  }
+  return Object.keys(members).map(k => members[k]).filter(g => g.length > 1)
+    .sort((a, b) => a[0] - b[0]);
+}
+
+/**
+ * Custom sheet function: =SIMILAR_STUDENTS(A2:A, B2:B)
+ * Group number per student row (blank when not a possible duplicate): same Student ID,
+ * or a name that is almost the same as another student's.
+ * @param {string[][]} idRange Student IDs.
+ * @param {string[][]} nameRange Student names.
+ * @return {number[][]} One group number (or blank) per row.
+ * @customfunction
+ */
+function SIMILAR_STUDENTS(idRange, nameRange) {
+  const col = r => (Array.isArray(r) ? r : [[r]]).map(x => String((Array.isArray(x) ? x[0] : x) || '').trim());
+  const ids = col(idRange), names = col(nameRange);
+  const len = Math.max(ids.length, names.length);
+  while (ids.length < len) ids.push('');
+  while (names.length < len) names.push('');
+  let last = len - 1;
+  while (last > 0 && !names[last] && !ids[last]) last--;
+  const out = [];
+  for (let i = 0; i <= last; i++) out.push(['']);
+  _studentDupGroups(ids, names).forEach((g, gi) => g.forEach(i => { if (i <= last) out[i][0] = gi + 1; }));
+  return out;
+}
+
 const DUP_COLOR_PALETTE = ['#fde68a', '#fecaca', '#bfdbfe', '#bbf7d0', '#e9d5ff', '#fed7aa', '#a5f3fc', '#fbcfe8'];
 const DUP_HELPER_HEADER = 'DUP GROUP';
+const DUP_HELPER_COL = 4; // column D
+const DUP_DATA_COLS = 3;  // colors paint columns A:C
 
 function _isDupColorRule(rule) {
   const cond = rule.getBooleanCondition && rule.getBooleanCondition();
@@ -474,31 +540,42 @@ function _isDupColorRule(rule) {
   return /^=AND\(ISNUMBER\(\$D2\),MOD\(\$D2,8\)=\d\)$/.test(String(cond.getCriteriaValues()[0] || ''));
 }
 
-// Sets up live conditional formatting on the CI List tab: column D holds the
-// SIMILAR_GROUP() result and 8 color rules paint rows A:B by group number.
+// Which tabs support duplicate coloring, and the helper formula each one uses.
+function _dupFormulaFor(sheet) {
+  const name = sheet.getName();
+  if (name === CI_SHEET_NAME) {
+    return '={"' + DUP_HELPER_HEADER + '";SIMILAR_GROUP(A2:A)}';
+  }
+  if (name === STUDENT_SHEET_NAME) {
+    const info = _studentSheetInfo();
+    const letter = n => String.fromCharCode(65 + n);
+    const idL = letter(info.idCol), nameL = letter(info.nameCol);
+    return '={"' + DUP_HELPER_HEADER + '";SIMILAR_STUDENTS(' + idL + '2:' + idL + ',' + nameL + '2:' + nameL + ')}';
+  }
+  return null;
+}
+
+// Sets up live conditional formatting on the open tab (CI List or Student List): column D
+// holds the group-number formula and 8 color rules paint rows A:C by group number.
 function colorPossibleDuplicates() {
   const ui = SpreadsheetApp.getUi();
-  const sheet = openActiveSpreadsheet().getSheetByName(CI_SHEET_NAME);
-  if (!sheet) { ui.alert('Sheet "' + CI_SHEET_NAME + '" not found.'); return; }
+  const sheet = SpreadsheetApp.getActiveSheet();
+  const formula = _dupFormulaFor(sheet);
+  if (!formula) { ui.alert('Open the "' + CI_SHEET_NAME + '" or "' + STUDENT_SHEET_NAME + '" tab first, then run this again.'); return; }
 
-  const header = String(sheet.getRange('D1').getValue() || '').trim();
-  if (header && header !== DUP_HELPER_HEADER) { // anything else in D is somebody's own data
-    ui.alert('Column D on the "' + CI_SHEET_NAME + '" tab already has "' + header + '" in it. Move or clear it first — this tool needs column D for its helper formula.');
+  const header = String(sheet.getRange(1, DUP_HELPER_COL).getValue() || '').trim();
+  if (header && header !== DUP_HELPER_HEADER) {
+    ui.alert('Column D on the "' + sheet.getName() + '" tab already has "' + header + '" in it. Move or clear it first — this tool needs column D for its helper formula.');
     return;
   }
 
-  // Remove the old one-time (static) highlights, if any, so only the live rules color rows.
-  const lastRow = Math.max(sheet.getLastRow(), 2);
-  sheet.getRange(2, 1, lastRow - 1, 2).setBackground(null);
-  sheet.getRange(2, 1, lastRow - 1, 1).clearNote();
+  // One array formula in the header cell: D1 = "DUP GROUP", D2.. = group numbers. Living in
+  // row 1 means deleting a data row (even the first one) can never remove it.
+  sheet.getRange(2, DUP_HELPER_COL, Math.max(sheet.getMaxRows() - 1, 1), 1).clearContent();
+  sheet.getRange(1, DUP_HELPER_COL).setFormula(formula).setFontWeight('bold');
+  sheet.getRange(1, DUP_HELPER_COL, sheet.getMaxRows(), 1).setHorizontalAlignment('center');
 
-  // One array formula in the header cell: D1 = "DUP GROUP", D2.. = group numbers. Living in row 1
-  // means deleting a CI row (even the first one) can never remove it.
-  sheet.getRange('D2:D').clearContent();
-  sheet.getRange('D1').setFormula('={"' + DUP_HELPER_HEADER + '";SIMILAR_GROUP(A2:A)}').setFontWeight('bold');
-  sheet.getRange('D1:D').setHorizontalAlignment('center');
-
-  const range = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), 2); // A2:B to the bottom
+  const range = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), DUP_DATA_COLS);
   const kept = sheet.getConditionalFormatRules().filter(r => !_isDupColorRule(r));
   const ours = DUP_COLOR_PALETTE.map((color, k) =>
     SpreadsheetApp.newConditionalFormatRule()
@@ -509,21 +586,95 @@ function colorPossibleDuplicates() {
   sheet.setConditionalFormatRules(kept.concat(ours));
   SpreadsheetApp.flush();
 
+  const what = sheet.getName() === STUDENT_SHEET_NAME ? 'Students with the same ID or an almost-the-same name' : 'Names that look like the same person';
   ui.alert('Duplicate colors are now live',
-    'Names that look like the same person share a color on the CI List tab (column D shows each group number).\n\n' +
-    'It updates by itself as names are added, edited or removed.',
+    what + ' share a color on the "' + sheet.getName() + '" tab (column D shows each group number).\n\n' +
+    'It updates by itself as rows are added, edited or removed.\n\n' +
+    'To see only the duplicates: filter column D with "Is not empty".',
     ui.ButtonSet.OK);
 }
 
 function removeDuplicateColors() {
   const ui = SpreadsheetApp.getUi();
-  const sheet = openActiveSpreadsheet().getSheetByName(CI_SHEET_NAME);
-  if (!sheet) return;
+  const sheet = SpreadsheetApp.getActiveSheet();
+  if (!_dupFormulaFor(sheet)) { ui.alert('Open the "' + CI_SHEET_NAME + '" or "' + STUDENT_SHEET_NAME + '" tab first.'); return; }
   sheet.setConditionalFormatRules(sheet.getConditionalFormatRules().filter(r => !_isDupColorRule(r)));
-  if (String(sheet.getRange('D1').getValue() || '').trim() === DUP_HELPER_HEADER) {
-    sheet.getRange('D1:D').clear();
+  if (String(sheet.getRange(1, DUP_HELPER_COL).getValue() || '').trim() === DUP_HELPER_HEADER) {
+    sheet.getRange(1, DUP_HELPER_COL, sheet.getMaxRows(), 1).clear();
   }
   ui.alert('Duplicate colors removed.');
+}
+
+/* ================= REMOVE DUPLICATE STUDENT IDs (sheet menu) =================
+   Finds Student List rows that repeat a Student ID (column C, the ID copy; column A when C is
+   empty), keeps the FIRST row for each ID and deletes the later copies. Asks before deleting
+   and saves every removed row, with its original row number, to a "Removed Duplicates" tab. */
+
+const REMOVED_DUPES_SHEET = 'Removed Duplicates';
+
+function _studentDupePlan(sheet) {
+  const lastRow = sheet.getLastRow();
+  const width = Math.max(sheet.getLastColumn(), 4);
+  if (lastRow < 2) return { width, rows: [], seen: 0 };
+  const values = sheet.getRange(2, 1, lastRow - 1, width).getValues();
+  const firstRowOf = {};
+  const rows = [];
+  let seen = 0;
+  values.forEach((r, i) => {
+    const raw = String(r[2] || '').trim() || String(r[0] || '').trim(); // column C, else column A
+    if (!raw) return;                                                    // no ID: never touched
+    seen++;
+    const key = _normalizeId(raw).toLowerCase();
+    if (firstRowOf[key] === undefined) { firstRowOf[key] = i + 2; return; }
+    rows.push({ rowNum: i + 2, keptRow: firstRowOf[key], id: raw, name: String(r[1] || '').trim(), values: r });
+  });
+  return { width, rows, seen };
+}
+
+function removeDuplicateStudentIds() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = openActiveSpreadsheet();
+  const sheet = ss.getSheetByName(STUDENT_SHEET_NAME);
+  if (!sheet) { ui.alert('Sheet "' + STUDENT_SHEET_NAME + '" not found.'); return; }
+
+  const plan = _studentDupePlan(sheet);
+  if (!plan.rows.length) { ui.alert('No duplicate Student IDs found among ' + plan.seen + ' students.'); return; }
+
+  const sample = plan.rows.slice(0, 12)
+    .map(d => 'row ' + d.rowNum + ': ' + d.id + ' — ' + d.name + '   (keeps row ' + d.keptRow + ')').join('\n');
+  const answer = ui.alert(
+    plan.rows.length + ' duplicate row(s) found',
+    'Out of ' + plan.seen + ' students, ' + plan.rows.length + ' rows repeat a Student ID that appears earlier in the list.\n\n' +
+    'The FIRST row of each ID is kept; these later copies will be deleted:\n\n' + sample +
+    (plan.rows.length > 12 ? '\n…and ' + (plan.rows.length - 12) + ' more.' : '') +
+    '\n\nA copy of every deleted row is saved in the "' + REMOVED_DUPES_SHEET + '" tab first. Delete them?',
+    ui.ButtonSet.YES_NO);
+  if (answer !== ui.Button.YES) return;
+
+  // 1. Back up the rows that are about to go.
+  let backup = ss.getSheetByName(REMOVED_DUPES_SHEET);
+  if (!backup) {
+    backup = ss.insertSheet(REMOVED_DUPES_SHEET);
+    backup.appendRow(['REMOVED ON', 'ORIGINAL ROW', 'KEPT ROW', 'STUDENT ID (col C)'].concat(sheet.getRange(1, 1, 1, plan.width).getValues()[0]));
+    backup.setFrozenRows(1);
+  }
+  const stamp = new Date();
+  const out = plan.rows.map(d => [stamp, d.rowNum, d.keptRow, d.id].concat(d.values));
+  backup.getRange(backup.getLastRow() + 1, 1, out.length, out[0].length).setValues(out);
+  SpreadsheetApp.flush();
+
+  // 2. Delete bottom-up, in contiguous blocks (far fewer calls than one row at a time).
+  const nums = plan.rows.map(d => d.rowNum).sort((a, b) => b - a);
+  let i = 0, deleted = 0;
+  while (i < nums.length) {
+    let start = nums[i], count = 1;
+    while (i + count < nums.length && nums[i + count] === start - count) count++;
+    sheet.deleteRows(start - count + 1, count);
+    deleted += count;
+    i += count;
+  }
+  SpreadsheetApp.flush();
+  ui.alert('Done', deleted + ' duplicate row(s) deleted from "' + STUDENT_SHEET_NAME + '". Copies are saved in the "' + REMOVED_DUPES_SHEET + '" tab.', ui.ButtonSet.OK);
 }
 
 /* ================= PRESENCE ("online now" counter) ================= */
@@ -938,7 +1089,10 @@ function _studentSheetInfo() {
   const sheet = ss.getSheetByName(STUDENT_SHEET_NAME);
   if (!sheet) throw new Error('Sheet "' + STUDENT_SHEET_NAME + '" not found.');
   const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(_normalizeHeader);
+  let headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(_normalizeHeader);
+  // Drop the DUP GROUP helper column (and anything right of it) — it is not part of the roster.
+  const helperAt = headers.indexOf(_normalizeHeader(DUP_HELPER_HEADER));
+  if (helperAt !== -1) headers = headers.slice(0, helperAt);
   // The real "Student List" sheet repeats the Student ID across two columns
   // (student id, Name, student id, LOCATION) — capture every matching column
   // so a pasted ID gets written into all of them, not just the first.
