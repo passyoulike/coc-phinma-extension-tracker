@@ -196,6 +196,14 @@
             <div class="stat"><div class="num" id="stuPendingHours">-</div><div class="lbl">Pending Hours</div></div>
           </div>
 
+          <div id="stuPhoneBox">
+            <h4>Mobile Number</h4>
+            <p class="small" id="stuPhoneStatus">No number on file yet.</p>
+            <input id="stuPhoneInput" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="09XXXXXXXXX">
+            <button class="secondary" id="stuPhoneBtn">Save Number</button>
+            <div id="stuPhoneMsg" class="msg"></div>
+          </div>
+
           <h4>History</h4>
           <div class="table-wrap">
             <table>
@@ -690,6 +698,12 @@
         currentStudentId = id;
         document.getElementById('stuProfileBox').classList.remove('hidden');
         document.getElementById('stuName').textContent = res.name || '-';
+        // Phone can only be saved for students who are on the Student List roster.
+        document.getElementById('stuPhoneBox').classList.toggle('hidden', !!res.notOnRoster);
+        document.getElementById('stuPhoneInput').value = '';
+        document.getElementById('stuPhoneStatus').textContent = res.phoneOnFile
+          ? 'On file: ' + res.phoneMasked + ' — enter a new number below to change it.'
+          : 'No number on file yet.';
         if (res.notOnRoster) {
           showMsg('stuMsg', 'This Student ID is not on the Student List roster — showing records from the Extension log only.', false);
         }
@@ -697,6 +711,26 @@
       }).catch(err => {
         document.getElementById('stuLoadBtn').disabled = false;
         showMsg('stuMsg', 'Server error: ' + err.message, true);
+      });
+    });
+
+    document.getElementById('stuPhoneBtn').addEventListener('click', () => {
+      const phone = document.getElementById('stuPhoneInput').value.trim();
+      if (!currentStudentId) { showMsg('stuPhoneMsg', 'Load your record first.', true); return; }
+      if (!phone) { showMsg('stuPhoneMsg', 'Enter your mobile number.', true); return; }
+      document.getElementById('stuPhoneBtn').disabled = true;
+      callServer('updateStudentPhone', currentStudentId, phone).then(res => {
+        document.getElementById('stuPhoneBtn').disabled = false;
+        if (res && res.status === 'success') {
+          showMsg('stuPhoneMsg', 'Saved. Your number is now on file.', false);
+          document.getElementById('stuPhoneStatus').textContent = 'On file: ' + res.phoneMasked + ' — enter a new number below to change it.';
+          document.getElementById('stuPhoneInput').value = '';
+        } else {
+          showMsg('stuPhoneMsg', (res && res.message) || 'Could not save your number.', true);
+        }
+      }).catch(err => {
+        document.getElementById('stuPhoneBtn').disabled = false;
+        showMsg('stuPhoneMsg', 'Server error: ' + err.message, true);
       });
     });
 

@@ -531,13 +531,18 @@ function SIMILAR_STUDENTS(idRange, nameRange) {
 
 const DUP_COLOR_PALETTE = ['#fde68a', '#fecaca', '#bfdbfe', '#bbf7d0', '#e9d5ff', '#fed7aa', '#a5f3fc', '#fbcfe8'];
 const DUP_HELPER_HEADER = 'DUP GROUP';
-const DUP_HELPER_COL = 4; // column D
-const DUP_DATA_COLS = 3;  // colors paint columns A:C
+// Where the helper column goes depends on the tab: CI List uses column D; on Student List,
+// column D holds the student's phone number, so the helper moves to column E.
+function _dupLayout(sheet) {
+  return sheet.getName() === STUDENT_SHEET_NAME
+    ? { col: 5, letter: 'E', dataCols: 4 }   // colors paint A:D
+    : { col: 4, letter: 'D', dataCols: 3 };  // colors paint A:C
+}
 
 function _isDupColorRule(rule) {
   const cond = rule.getBooleanCondition && rule.getBooleanCondition();
   if (!cond || cond.getCriteriaType() !== SpreadsheetApp.BooleanCriteria.CUSTOM_FORMULA) return false;
-  return /^=AND\(ISNUMBER\(\$D2\),MOD\(\$D2,8\)=\d\)$/.test(String(cond.getCriteriaValues()[0] || ''));
+  return /^=AND\(ISNUMBER\(\$[DE]2\),MOD\(\$[DE]2,8\)=\d\)$/.test(String(cond.getCriteriaValues()[0] || ''));
 }
 
 // Which tabs support duplicate coloring, and the helper formula each one uses.
@@ -555,31 +560,33 @@ function _dupFormulaFor(sheet) {
   return null;
 }
 
-// Sets up live conditional formatting on the open tab (CI List or Student List): column D
-// holds the group-number formula and 8 color rules paint rows A:C by group number.
+// Sets up live conditional formatting on the open tab (CI List or Student List): a helper
+// column (D on CI List, E on Student List) holds the group-number formula and 8 color rules
+// paint each row by group number.
 function colorPossibleDuplicates() {
   const ui = SpreadsheetApp.getUi();
   const sheet = SpreadsheetApp.getActiveSheet();
   const formula = _dupFormulaFor(sheet);
   if (!formula) { ui.alert('Open the "' + CI_SHEET_NAME + '" or "' + STUDENT_SHEET_NAME + '" tab first, then run this again.'); return; }
 
-  const header = String(sheet.getRange(1, DUP_HELPER_COL).getValue() || '').trim();
+  const lay = _dupLayout(sheet);
+  const header = String(sheet.getRange(1, lay.col).getValue() || '').trim();
   if (header && header !== DUP_HELPER_HEADER) {
-    ui.alert('Column D on the "' + sheet.getName() + '" tab already has "' + header + '" in it. Move or clear it first — this tool needs column D for its helper formula.');
+    ui.alert('Column ' + lay.letter + ' on the "' + sheet.getName() + '" tab already has "' + header + '" in it. Move or clear it first — this tool needs column ' + lay.letter + ' for its helper formula.');
     return;
   }
 
-  // One array formula in the header cell: D1 = "DUP GROUP", D2.. = group numbers. Living in
-  // row 1 means deleting a data row (even the first one) can never remove it.
-  sheet.getRange(2, DUP_HELPER_COL, Math.max(sheet.getMaxRows() - 1, 1), 1).clearContent();
-  sheet.getRange(1, DUP_HELPER_COL).setFormula(formula).setFontWeight('bold');
-  sheet.getRange(1, DUP_HELPER_COL, sheet.getMaxRows(), 1).setHorizontalAlignment('center');
+  // One array formula in the header cell: row 1 = "DUP GROUP", below it the group numbers.
+  // Living in row 1 means deleting a data row (even the first one) can never remove it.
+  sheet.getRange(2, lay.col, Math.max(sheet.getMaxRows() - 1, 1), 1).clearContent();
+  sheet.getRange(1, lay.col).setFormula(formula).setFontWeight('bold');
+  sheet.getRange(1, lay.col, sheet.getMaxRows(), 1).setHorizontalAlignment('center');
 
-  const range = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), DUP_DATA_COLS);
+  const range = sheet.getRange(2, 1, Math.max(sheet.getMaxRows() - 1, 1), lay.dataCols);
   const kept = sheet.getConditionalFormatRules().filter(r => !_isDupColorRule(r));
   const ours = DUP_COLOR_PALETTE.map((color, k) =>
     SpreadsheetApp.newConditionalFormatRule()
-      .whenFormulaSatisfied('=AND(ISNUMBER($D2),MOD($D2,8)=' + k + ')')
+      .whenFormulaSatisfied('=AND(ISNUMBER($' + lay.letter + '2),MOD($' + lay.letter + '2,8)=' + k + ')')
       .setBackground(color)
       .setRanges([range])
       .build());
@@ -588,9 +595,9 @@ function colorPossibleDuplicates() {
 
   const what = sheet.getName() === STUDENT_SHEET_NAME ? 'Students with the same ID or an almost-the-same name' : 'Names that look like the same person';
   ui.alert('Duplicate colors are now live',
-    what + ' share a color on the "' + sheet.getName() + '" tab (column D shows each group number).\n\n' +
+    what + ' share a color on the "' + sheet.getName() + '" tab (column ' + lay.letter + ' shows each group number).\n\n' +
     'It updates by itself as rows are added, edited or removed.\n\n' +
-    'To see only the duplicates: filter column D with "Is not empty".',
+    'To see only the duplicates: filter column ' + lay.letter + ' with "Is not empty".',
     ui.ButtonSet.OK);
 }
 
@@ -599,8 +606,9 @@ function removeDuplicateColors() {
   const sheet = SpreadsheetApp.getActiveSheet();
   if (!_dupFormulaFor(sheet)) { ui.alert('Open the "' + CI_SHEET_NAME + '" or "' + STUDENT_SHEET_NAME + '" tab first.'); return; }
   sheet.setConditionalFormatRules(sheet.getConditionalFormatRules().filter(r => !_isDupColorRule(r)));
-  if (String(sheet.getRange(1, DUP_HELPER_COL).getValue() || '').trim() === DUP_HELPER_HEADER) {
-    sheet.getRange(1, DUP_HELPER_COL, sheet.getMaxRows(), 1).clear();
+  const lay = _dupLayout(sheet);
+  if (String(sheet.getRange(1, lay.col).getValue() || '').trim() === DUP_HELPER_HEADER) {
+    sheet.getRange(1, lay.col, sheet.getMaxRows(), 1).clear();
   }
   ui.alert('Duplicate colors removed.');
 }
@@ -857,6 +865,97 @@ function _requireAdmin(username, password) {
   return auth.username;
 }
 
+/* ================= STUDENT PHONE NUMBER =================
+   A student can add or change their mobile number from the Student tab. It is written to the
+   Student List tab, column D, on the row(s) matching their Student ID. The number is never
+   sent back to the browser (only a masked "on file" hint), and every change is logged to a
+   "Phone Update Log" tab so a wrong or malicious edit can be traced and undone. */
+
+const STUDENT_PHONE_COL = 4;               // column D of the Student List tab
+const STUDENT_PHONE_HEADER = 'PHONE NUMBER';
+const PHONE_LOG_SHEET_NAME = 'Phone Update Log';
+
+// Philippine mobile numbers: 09XXXXXXXXX, +639XXXXXXXXX, 639XXXXXXXXX or 9XXXXXXXXX
+// (spaces, dashes, dots and parentheses are ignored). Returns the 09XXXXXXXXX form or ''.
+function _normalizePhone(raw) {
+  let d = String(raw === undefined || raw === null ? '' : raw).replace(/[\s\-().]/g, '');
+  if (/^\+639\d{9}$/.test(d)) d = '0' + d.slice(3);
+  else if (/^639\d{9}$/.test(d)) d = '0' + d.slice(2);
+  else if (/^9\d{9}$/.test(d)) d = '0' + d;
+  return /^09\d{9}$/.test(d) ? d : '';
+}
+
+function _maskPhone(p) {
+  const s = String(p || '').replace(/\D/g, '');
+  return s.length >= 4 ? s.slice(0, 2) + '•••••' + s.slice(-4) : '';
+}
+
+// Sheet rows (1-based) whose Student ID matches, checking every ID column.
+function _studentRowsById(info, studentId) {
+  const lastRow = info.sheet.getLastRow();
+  if (lastRow < 2) return [];
+  const key = _normalizeId(studentId).toLowerCase();
+  const width = Math.max.apply(null, info.idCols) + 1;
+  const values = info.sheet.getRange(2, 1, lastRow - 1, width).getValues();
+  const rows = [];
+  values.forEach((r, i) => {
+    if (info.idCols.some(c => String(r[c] || '').trim() && _normalizeId(r[c]).toLowerCase() === key)) rows.push(i + 2);
+  });
+  return rows;
+}
+
+function updateStudentPhone(studentId, phone) {
+  try {
+    studentId = (studentId || '').toString().trim();
+    if (!studentId) return { status: 'error', message: 'Load your record first.' };
+    const norm = _normalizePhone(phone);
+    if (!norm) return { status: 'error', message: 'Enter a valid mobile number, like 09171234567.' };
+
+    const lock = LockService.getScriptLock();
+    lock.waitLock(8000);
+    try {
+      const info = _studentSheetInfo();
+      const sheet = info.sheet;
+      const header = String(sheet.getRange(1, STUDENT_PHONE_COL).getValue() || '').trim();
+      if (header && /dup group/i.test(header)) {
+        return { status: 'error', message: 'Column D of the Student List tab is in use by something else. Please tell your administrator.' };
+      }
+      if (info.idCols.indexOf(STUDENT_PHONE_COL - 1) !== -1 || info.nameCol === STUDENT_PHONE_COL - 1) {
+        return { status: 'error', message: 'Column D of the Student List tab is not available for phone numbers. Please tell your administrator.' };
+      }
+      const rows = _studentRowsById(info, studentId);
+      if (!rows.length) return { status: 'error', message: 'Your Student ID is not on the Student List, so a number cannot be saved yet.' };
+
+      // First save: label the column (it was the empty LOCATION column, or had no header).
+      if (!header || /location|area|site/i.test(header)) {
+        sheet.getRange(1, STUDENT_PHONE_COL).setValue(STUDENT_PHONE_HEADER);
+      }
+
+      const oldValues = rows.map(r => String(sheet.getRange(r, STUDENT_PHONE_COL).getValue() || '').trim());
+      rows.forEach(r => {
+        const cell = sheet.getRange(r, STUDENT_PHONE_COL);
+        cell.setNumberFormat('@');         // text, so the leading 0 is kept
+        cell.setValue(norm);
+      });
+
+      let log = openActiveSpreadsheet().getSheetByName(PHONE_LOG_SHEET_NAME);
+      if (!log) {
+        log = openActiveSpreadsheet().insertSheet(PHONE_LOG_SHEET_NAME);
+        log.appendRow(['TIMESTAMP', 'STUDENT ID', 'OLD NUMBER', 'NEW NUMBER', 'ROWS UPDATED']);
+        log.setFrozenRows(1);
+      }
+      const logRow = log.getLastRow() + 1;
+      log.getRange(logRow, 2, 1, 3).setNumberFormat('@'); // keep IDs and numbers as text
+      log.getRange(logRow, 1, 1, 5).setValues([[new Date(), studentId, oldValues.filter(Boolean)[0] || '', norm, rows.join(', ')]]);
+    } finally {
+      lock.releaseLock();
+    }
+    return { status: 'success', phoneMasked: _maskPhone(norm) };
+  } catch (e) {
+    return { status: 'error', message: e.message };
+  }
+}
+
 function getStudentProfile(studentId) {
   try {
     studentId = (studentId || '').toString().trim();
@@ -868,13 +967,19 @@ function getStudentProfile(studentId) {
     const nameKey = headers.find(h => /(^| )name($| )|student name|full name/.test(h)) || headers[1] || headers[0];
     const idKey = headers.find(h => /(^| )id($| )|student id|id number/.test(h)) || headers[0];
     const locKey = headers.find(h => /location|area|site/.test(h));
-    const match = rows.find(r => String(r[idKey] || '').trim() === studentId);
-    if (match) {
+    const matchIdx = rows.findIndex(r => String(r[idKey] || '').trim() === studentId);
+    if (matchIdx !== -1) {
+      const match = rows[matchIdx];
+      // Phone lives in column D; report only a masked hint so the number is never exposed.
+      const rawPhone = sheet.getRange(matchIdx + 2, STUDENT_PHONE_COL).getValue();
+      const phoneHint = _normalizePhone(rawPhone) ? _maskPhone(_normalizePhone(rawPhone)) : '';
       return {
         status: 'success',
         id: studentId,
         name: String(match[nameKey] || '').trim(),
-        location: locKey ? String(match[locKey] || '').trim() : ''
+        location: locKey ? String(match[locKey] || '').trim() : '',
+        phoneOnFile: !!phoneHint,
+        phoneMasked: phoneHint
       };
     }
 
@@ -1286,5 +1391,6 @@ const API_ACTIONS = {
   bulkAddCIs, removeCIs,
   heartbeat, getOnlineCount,
   getIncidentsAdmin, saveIncidents, removeIncidents,
-  getSummary
+  getSummary,
+  updateStudentPhone
 };
